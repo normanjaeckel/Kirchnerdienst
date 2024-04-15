@@ -1,5 +1,10 @@
 # Patterns of intentionally untracked files that Git should ignore
 
+main
+
+# Roc
+roc-dir/
+
 # Devenv and direnv
 .devenv*
 devenv.local.nix
@@ -8,5 +13,5 @@ devenv.local.nix
 # pre-commit
 .pre-commit-config.yaml
 
-# Roc
-roc-dir/
+# Task
+.task/

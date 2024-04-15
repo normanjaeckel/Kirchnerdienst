@@ -2,14 +2,44 @@
 
 version: '3'
 
-vars:
-  GREETING: Hello, World!
-
 tasks:
   default:
     cmds:
-      - echo "{{.GREETING}}"
-    silent: true
+      - task: format
+      - task: test
+      - task: build
+
+  build:
+    desc: Builds the project
+    cmds:
+      - roc build
+    sources:
+      - main.roc
+    generates:
+      - main
+
+  format:
+    desc: Formats roc files
+    cmds:
+      - roc format main.roc
+    sources:
+      - main.roc
+
+  test:
+    desc: Runs checks and tests
+    cmds:
+      - roc format --check main.roc
+      - roc check
+      - roc test
+    sources:
+      - main.roc
+
+  run-server:
+    desc: Runs the webserver
+    deps:
+      - build
+    cmds:
+      - ./main
 
   get-roc:
     desc: Downloads the latest nightly build of roc and unzips it
