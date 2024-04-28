@@ -1,6 +1,6 @@
 app "kirchnerdienst"
     packages {
-        webserver: "https://oshahn.de/BTMaAYUoV_nQAliSkaBH1RY16JOPWjw_Gm0oF7C5FJA.tar.br",
+        webserver: "https://oshahn.de/kQ7c0Gc2pfoaCN7t7oXhJWld1JlZcjlUgVjZ1ccwxis.tar.br",
         html: "vendor/roc-html/src/main.roc", # html : "https://github.com/Hasnep/roc-html/releases/download/v0.4.0/sS6DMu08ogvM7j5S4E-A6VwdwQiVPlh6DbrTHbBAhZw.tar.br",
     }
     imports [
@@ -14,7 +14,8 @@ app "kirchnerdienst"
     provides [main, Model] to webserver
 
 Program : {
-    init : Model,
+    decodeModel : [Init, Existing (List U8)] -> Model,
+    encodeModel : Model -> List U8,
     handleReadRequest : Request, Model -> Response,
     handleWriteRequest : Request, Model -> (Response, Model),
 }
@@ -39,19 +40,32 @@ Datetime : {
 }
 
 main : Program
-main = { init, handleReadRequest, handleWriteRequest }
+main = { decodeModel, encodeModel, handleReadRequest, handleWriteRequest }
 
-init : Model
-init = [
-    # {
-    #     datetime: { year: 2024, month: 4, day: 14, hour: 10, minute: 0 },
-    #     location: "Trinitatiskirche",
-    #     description: "Gottesdienst mit Abendmahl",
-    #     pastor: "Moosdorf",
-    #     assistant: "Mustermann",
-    #     reader: "",
-    # },
-]
+decodeModel : [Init, Existing (List U8)] -> Model
+decodeModel = \fromPlatform ->
+    when fromPlatform is
+        Init ->
+            []
+
+        Existing _encoded ->
+            []
+
+encodeModel : Model -> List U8
+encodeModel = \_model ->
+    []
+
+# init : Model
+# init = [
+#     # {
+#     #     datetime: { year: 2024, month: 4, day: 14, hour: 10, minute: 0 },
+#     #     location: "Trinitatiskirche",
+#     #     description: "Gottesdienst mit Abendmahl",
+#     #     pastor: "Moosdorf",
+#     #     assistant: "Mustermann",
+#     #     reader: "",
+#     # },
+# ]
 
 handleReadRequest : Request, Model -> Response
 handleReadRequest = \request, model ->
@@ -97,14 +111,11 @@ handleWriteRequest = \request, model ->
                 Err BadRequest ->
                     (response400, model)
 
-                Ok (s, m) ->
-                    (response200 s, m)
+                Ok (responseBody, newModel) ->
+                    (response200 responseBody, newModel)
 
         _ ->
             (response400, model)
-
-expect
-    42 == 42
 
 # ListView
 
@@ -181,6 +192,7 @@ newServiceForm =
         form
             [
                 (attribute "hx-post") "/new-service",
+                (attribute "hx-target") "#mainContent",
             ]
             [
                 p [] [
@@ -211,7 +223,8 @@ newServiceForm =
                     input [type "submit", value "Speichern"],
                     button
                         [
-                            (attribute "hx-get") "/cancel-new-service-form",
+                            (attribute "hx-get") "/",
+                            (attribute "hx-target") "#mainContent",
                         ]
                         [text "Abbrechen"],
                 ],
@@ -239,7 +252,7 @@ newServicePerform = \body, model ->
                             assistant: "",
                             reader: "",
                         }
-                    Ok ("Harr", newModel)
+                    Ok (listView newModel, newModel)
             |> Result.mapErr
                 \err ->
                     when err is
