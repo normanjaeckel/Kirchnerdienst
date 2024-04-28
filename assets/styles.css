@@ -1,0 +1,40 @@
+body {
+    margin: 0 auto;
+    max-width: 50em;
+    font-family: Arial, Helvetica, sans-serif;
+    line-height: 1.5;
+    padding: 4em 1em;
+    color: #555;
+}
+
+section {
+    margin-top: 1em;
+    padding-top: 1em;
+    padding-bottom: 1em;
+}
+
+section h2:first-child {
+    margin-top: 0em;
+}
+
+h1,
+h2,
+strong {
+    color: #333;
+}
+
+button {
+    margin-left: 1em;
+}
+
+button:first-child {
+    margin-left: 0em;
+}
+
+form label input {
+    margin-left: 0.5em;
+}
+
+form label textarea {
+    margin-left: 0.5em;
+}

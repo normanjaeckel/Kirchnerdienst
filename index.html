@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kirchnerdienste</title>
+
+    <link rel="icon" href="data:,">
+
+    <link rel="stylesheet" href="/assets/styles.css">
+
+    <script type="text/javascript" src="/assets/htmx/htmx.min.js"
+        integrity="sha384-0gxUXCCR8yv9FM2b+U3FDbsKthCI66oH5IA9fHppQq9DDMHuMauqq1ZHBpJxQ0J0"></script>
+</head>
+
+<body>
+    <div id="mainContent" hx-get="{% contentPath %}" hx-trigger="load"></div>
+</body>
+
+</html>
