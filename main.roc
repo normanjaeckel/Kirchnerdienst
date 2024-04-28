@@ -2,11 +2,13 @@ app "kirchnerdienst"
     packages {
         webserver: "https://oshahn.de/kQ7c0Gc2pfoaCN7t7oXhJWld1JlZcjlUgVjZ1ccwxis.tar.br",
         html: "vendor/roc-html/src/main.roc", # html : "https://github.com/Hasnep/roc-html/releases/download/v0.4.0/sS6DMu08ogvM7j5S4E-A6VwdwQiVPlh6DbrTHbBAhZw.tar.br",
+        json: "vendor/roc-json/package/main.roc", # json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.7.0/xuaMzXRVG_SEhOFZucS3iBozlRdObWsfKaYZMHVE_q0.tar.br",
     }
     imports [
         webserver.Webserver.{ Request, RequestBody, Response },
         html.Attribute.{ attribute, id, name, required, rows, type, value },
         html.Html.{ Node, button, form, h1, h2, input, label, p, renderWithoutDocType, section, span, text, textarea },
+        json.Core.{ json },
         "index.html" as index : Str,
         "assets/styles.css" as styles : List U8,
         "assets/htmx/htmx.min.js" as htmx : List U8,
@@ -48,24 +50,14 @@ decodeModel = \fromPlatform ->
         Init ->
             []
 
-        Existing _encoded ->
-            []
+        Existing encoded ->
+            when Decode.fromBytes encoded json is
+                Ok model -> model
+                Err _ -> crash "Error: Can not decode snapshot."
 
 encodeModel : Model -> List U8
-encodeModel = \_model ->
-    []
-
-# init : Model
-# init = [
-#     # {
-#     #     datetime: { year: 2024, month: 4, day: 14, hour: 10, minute: 0 },
-#     #     location: "Trinitatiskirche",
-#     #     description: "Gottesdienst mit Abendmahl",
-#     #     pastor: "Moosdorf",
-#     #     assistant: "Mustermann",
-#     #     reader: "",
-#     # },
-# ]
+encodeModel = \model ->
+    Encode.toBytes model json
 
 handleReadRequest : Request, Model -> Response
 handleReadRequest = \request, model ->
