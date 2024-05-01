@@ -1,6 +1,6 @@
 app "kirchnerdienst"
     packages {
-        webserver: "https://oshahn.de/kQ7c0Gc2pfoaCN7t7oXhJWld1JlZcjlUgVjZ1ccwxis.tar.br",
+        webserver: "https://github.com/ostcar/kingfisher/releases/download/v0.0.1/GJKdBN6nFVo5QW7t66X3vJLGmPmjd5qfmqcS5y9V7M0.tar.br",
         html: "vendor/roc-html/src/main.roc", # html : "https://github.com/Hasnep/roc-html/releases/download/v0.4.0/sS6DMu08ogvM7j5S4E-A6VwdwQiVPlh6DbrTHbBAhZw.tar.br",
         json: "vendor/roc-json/package/main.roc", # json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.7.0/xuaMzXRVG_SEhOFZucS3iBozlRdObWsfKaYZMHVE_q0.tar.br",
     }
@@ -155,8 +155,14 @@ serviceLine = \service ->
         ],
         p [] [text service.description],
         p [] [text "Leitung: $(service.pastor)"],
-        p [] ([text "Kirchner/in: $(service.assistant)"] |> List.concat assistantFreeButton),
-        p [] ([text "Lektor/in: $(service.reader)"] |> List.concat readerFreeButton),
+        p
+            []
+            (
+                [text "Kirchner/in: $(service.assistant)"]
+                |> List.concat assistantFreeButton
+                |> List.concat [text "Lektor/in: $(service.reader)"]
+                |> List.concat readerFreeButton
+            ),
     ]
 
 dateToStr : Datetime -> Str
