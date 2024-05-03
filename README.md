@@ -26,6 +26,9 @@ to see the available options.
 
 ## Credits
 
-We use the JS library [htmx](https://htmx.org/). If you build the binary of this
-project, htmx' minified JS file is included. htmx is released under the
-[Zero-Clause BSD license](assets/htmx/LICENSE).
+We use the JS libraries [htmx](https://htmx.org) and
+[_hyperscript](https://hyperscript.org). If you build the binary of this
+project, htmx' minified JS file and _hyperscript's minified JS file are
+included. htmx is released under the [Zero-Clause BSD
+license](assets/htmx/LICENSE). _hyperscript is released under the [BSD 2-Clause
+License](Server/assets/_hyperscript/LICENSE).

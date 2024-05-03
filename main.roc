@@ -6,12 +6,13 @@ app "kirchnerdienst"
     }
     imports [
         webserver.Webserver.{ Request, RequestBody, Response },
-        html.Attribute.{ attribute, id, name, required, rows, type, value },
-        html.Html.{ Node, button, form, h1, h2, input, label, p, renderWithoutDocType, section, span, text, textarea },
+        # html.Attribute.{ attribute },
+        html.Html.{ Node, button, h1, h2, p, renderWithoutDocType, section, span, text },
         json.Core.{ json },
         "index.html" as index : Str,
         "assets/styles.css" as styles : List U8,
         "assets/htmx/htmx.min.js" as htmx : List U8,
+        "assets/_hyperscript/_hyperscript.min.js" as hyperscript : List U8,
     ]
     provides [main, Model] to webserver
 
@@ -25,6 +26,7 @@ Program : {
 Model : List Service
 
 Service : {
+    id : Str,
     datetime : Datetime,
     location : Str,
     description : Str,
@@ -71,16 +73,12 @@ handleReadRequest = \request, model ->
             ["", ""] ->
                 listView model |> response200
 
-            ["", "new-service"] ->
-                newServiceForm |> response200
-
             _ -> response404
     else
         when request.url |> Str.split "/" is
             ["", "assets", .. as subPath] ->
                 serveAssets subPath
 
-            # TODO: ["", "new-service"] -> ...
             _ -> index |> Str.replaceFirst "{% contentPath %}" request.url |> response200
 
 serveAssets : List Str -> Response
@@ -92,20 +90,21 @@ serveAssets = \path ->
         ["htmx", "htmx.min.js"] ->
             { body: htmx, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
 
+        ["_hyperscript", "_hyperscript.min.js"] ->
+            { body: hyperscript, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
+
         _ ->
             { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
 handleWriteRequest : Request, Model -> (Response, Model)
 handleWriteRequest = \request, model ->
     when request.url |> Str.split "/" is
-        ["", "new-service"] ->
-            when newServicePerform request.body model is
-                Err BadRequest ->
-                    (response400, model)
-
-                Ok (responseBody, newModel) ->
-                    (response200 responseBody, newModel)
-
+        # ["", "new-service"] ->
+        #     when newServicePerform request.body model is
+        #         Err BadRequest ->
+        #             (response400, model)
+        #         Ok (responseBody, newModel) ->
+        #             (response200 responseBody, newModel)
         _ ->
             (response400, model)
 
@@ -119,17 +118,6 @@ listView = \model ->
             (
                 [h1 [] [text "Kirchnerliste"]]
                 |> List.concat (model |> List.map serviceLine)
-                |> List.append
-                    (
-                        section [id "new-service-button"] [
-                            button
-                                [
-                                    (attribute "hx-get") "/new-service",
-                                    (attribute "hx-target") "#new-service-button",
-                                ]
-                                [text "Neuer Eintrag"],
-                        ]
-                    )
             )
     renderWithoutDocType node
 
@@ -184,111 +172,111 @@ numToStrWithZero = \n ->
 
 # New service
 
-newServiceForm : Str
-newServiceForm =
-    node =
-        form
-            [
-                (attribute "hx-post") "/new-service",
-                (attribute "hx-target") "#mainContent",
-            ]
-            [
-                p [] [
-                    label [] [
-                        text "Uhrzeit:",
-                        input [type "datetime-local", name "datetime", required ""],
-                    ],
-                ],
-                p [] [
-                    label [] [
-                        text "Ort:",
-                        input [type "text", name "location", required ""],
-                    ],
-                ],
-                p [] [
-                    label [] [
-                        text "Text:",
-                        textarea [name "description", rows "4", required ""] [],
-                    ],
-                ],
-                p [] [
-                    label [] [
-                        text "Pfarrer/in:",
-                        input [type "text", name "pastor"],
-                    ],
-                ],
-                p [] [
-                    input [type "submit", value "Speichern"],
-                    button
-                        [
-                            (attribute "hx-get") "/",
-                            (attribute "hx-target") "#mainContent",
-                        ]
-                        [text "Abbrechen"],
-                ],
-            ]
-    renderWithoutDocType node
+# newServiceForm : Str
+# newServiceForm =
+#     node =
+#         form
+#             [
+#                 (attribute "hx-post") "/new-service",
+#                 (attribute "hx-target") "#mainContent",
+#             ]
+#             [
+#                 p [] [
+#                     label [] [
+#                         text "Uhrzeit:",
+#                         input [type "datetime-local", name "datetime", required ""],
+#                     ],
+#                 ],
+#                 p [] [
+#                     label [] [
+#                         text "Ort:",
+#                         input [type "text", name "location", required ""],
+#                     ],
+#                 ],
+#                 p [] [
+#                     label [] [
+#                         text "Text:",
+#                         textarea [name "description", rows "4", required ""] [],
+#                     ],
+#                 ],
+#                 p [] [
+#                     label [] [
+#                         text "Pfarrer/in:",
+#                         input [type "text", name "pastor"],
+#                     ],
+#                 ],
+#                 p [] [
+#                     input [type "submit", value "Speichern"],
+#                     button
+#                         [
+#                             (attribute "hx-get") "/",
+#                             (attribute "hx-target") "#mainContent",
+#                         ]
+#                         [text "Abbrechen"],
+#                 ],
+#             ]
+#     renderWithoutDocType node
 
-newServicePerform : RequestBody, Model -> Result (Str, Model) [BadRequest]
-newServicePerform = \body, model ->
-    when body is
-        EmptyBody ->
-            Err BadRequest
+# newServicePerform : RequestBody, Model -> Result (Str, Model) [BadRequest]
+# newServicePerform = \body, model ->
+#     when body is
+#         EmptyBody ->
+#             Err BadRequest
 
-        Body b ->
-            bodyToFields b.body
-            |> Result.try newServiceParseFields
-            |> Result.try
-                \newService ->
-                    newModel =
-                        model
-                        |> List.append {
-                            datetime: newService.datetime,
-                            location: newService.location,
-                            description: newService.description,
-                            pastor: newService.pastor,
-                            assistant: "",
-                            reader: "",
-                        }
-                    Ok (listView newModel, newModel)
-            |> Result.mapErr
-                \err ->
-                    when err is
-                        InvalidInput -> BadRequest
+#         Body b ->
+#             bodyToFields b.body
+#             |> Result.try newServiceParseFields
+#             |> Result.try
+#                 \newService ->
+#                     newModel =
+#                         model
+#                         |> List.append {
+#                             datetime: newService.datetime,
+#                             location: newService.location,
+#                             description: newService.description,
+#                             pastor: newService.pastor,
+#                             assistant: "",
+#                             reader: "",
+#                         }
+#                     Ok (listView newModel, newModel)
+#             |> Result.mapErr
+#                 \err ->
+#                     when err is
+#                         InvalidInput -> BadRequest
 
-newServiceParseFields : List (Str, List U8) -> Result { datetime : Datetime, location : Str, description : Str, pastor : Str } [InvalidInput]
-newServiceParseFields = \fields ->
-    dt = fields |> getField "datetime"
-    loc = fields |> getField "location"
-    desc = fields |> getField "description"
-    pas = fields |> getField "pastor"
+# newServiceParseFields : List (Str, List U8) -> Result { datetime : Datetime, location : Str, description : Str, pastor : Str } [InvalidInput]
+# newServiceParseFields = \fields ->
+#     dt = fields |> getField "datetime"
+#     loc = fields |> getField "location"
+#     desc = fields |> getField "description"
+#     pas = fields |> getField "pastor"
 
-    when (dt, loc, desc, pas) is
-        (Ok datetimeStr, Ok location, Ok description, Ok pastor) ->
-            if datetimeStr == "" || location == "" || description == "" then
-                Err InvalidInput
-            else
-                parseDatetime datetimeStr
-                |> Result.try
-                    \datetime -> Ok { datetime, location, description, pastor }
+#     when (dt, loc, desc, pas) is
+#         (Ok datetimeStr, Ok location, Ok description, Ok pastor) ->
+#             if datetimeStr == "" || location == "" || description == "" then
+#                 Err InvalidInput
+#             else
+#                 parseDatetime datetimeStr
+#                 |> Result.try
+#                     \datetime -> Ok { datetime, location, description, pastor }
 
-        _ -> Err InvalidInput
+#         _ -> Err InvalidInput
 
-parseDatetime : Str -> Result Datetime [InvalidInput]
-parseDatetime = \datetime ->
-    when datetime |> Str.split "T" is
-        [date, time] ->
-            when (date |> Str.split "-", time |> Str.split ":") is
-                ([y, mo, d], [h, mi]) ->
-                    when (Str.toU64 y, Str.toU8 mo, Str.toU8 d, Str.toU8 h, Str.toU8 mi) is
-                        (Ok year, Ok month, Ok day, Ok hour, Ok minute) ->
-                            Ok { year, month, day, hour, minute }
+# parseDatetime : Str -> Result Datetime [InvalidInput]
+# parseDatetime = \datetime ->
+#     when datetime |> Str.split "T" is
+#         [date, time] ->
+#             when (date |> Str.split "-", time |> Str.split ":") is
+#                 ([y, mo, d], [h, mi]) ->
+#                     when (Str.toU64 y, Str.toU8 mo, Str.toU8 d, Str.toU8 h, Str.toU8 mi) is
+#                         (Ok year, Ok month, Ok day, Ok hour, Ok minute) ->
+#                             Ok { year, month, day, hour, minute }
 
-                        _ -> Err InvalidInput
+#                         _ -> Err InvalidInput
 
-                _ -> Err InvalidInput
+#                 _ -> Err InvalidInput
 
-        _ -> Err InvalidInput
+#         _ -> Err InvalidInput
 
 # Shared
 
