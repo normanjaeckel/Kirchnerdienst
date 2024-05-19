@@ -1,7 +1,7 @@
 app [main, Model] {
-    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.1/GJKdBN6nFVo5QW7t66X3vJLGmPmjd5qfmqcS5y9V7M0.tar.br",
-    html: "vendor/roc-html/src/main.roc", # html : "https://github.com/Hasnep/roc-html/releases/download/v0.5.0/...",
-    json: "vendor/roc-json/package/main.roc", # json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.9.0/...",
+    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.2/zlcCcrA9VofMd0mIrHEGwktucdmnq7xPIOuVNgY8EjE.tar.br",
+    html: "vendor/roc-html/src/main.roc", # https://github.com/Hasnep/roc-html/releases/tag/v0.6.0
+    json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.10.0
 }
 
 import webserver.Webserver exposing [Request, RequestBody, Response]
