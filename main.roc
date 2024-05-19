@@ -4,7 +4,7 @@ app [main, Model] {
     json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.10.0
 }
 
-import webserver.Webserver exposing [Request, RequestBody, Response]
+import webserver.Webserver exposing [Request, Response]
 # html.Attribute.{ attribute },
 import html.Html exposing [Node, button, h1, h2, p, renderWithoutDocType, section, span, text]
 import json.Json
@@ -15,7 +15,7 @@ import "assets/_hyperscript/_hyperscript.min.js" as hyperscript : List U8
 # "Beispiel.json" as testData : List U8,
 
 Program : {
-    decodeModel : [Init, Existing (List U8)] -> Model,
+    decodeModel : [Init, Existing (List U8)] -> Result Model Str,
     encodeModel : Model -> List U8,
     handleReadRequest : Request, Model -> Response,
     handleWriteRequest : Request, Model -> (Response, Model),
@@ -44,16 +44,15 @@ Datetime : {
 main : Program
 main = { decodeModel, encodeModel, handleReadRequest, handleWriteRequest }
 
-decodeModel : [Init, Existing (List U8)] -> Model
+decodeModel : [Init, Existing (List U8)] -> Result Model Str
 decodeModel = \fromPlatform ->
     when fromPlatform is
         Init ->
-            []
+            Ok []
 
         Existing encoded ->
-            when Decode.fromBytes encoded Json.utf8 is
-                Ok model -> model
-                Err _ -> crash "Error: Can not decode snapshot."
+            Decode.fromBytes encoded Json.utf8
+            |> Result.mapErr \_ -> "Error: Can not decode snapshot."
 
 encodeModel : Model -> List U8
 encodeModel = \model ->
@@ -62,9 +61,9 @@ encodeModel = \model ->
 handleReadRequest : Request, Model -> Response
 handleReadRequest = \request, model ->
     isHxRequest =
-        (request.headers |> List.contains { name: "Hx-Request", value: "true" })
+        (request.headers |> List.contains { name: "Hx-Request", value: "true" |> Str.toUtf8 })
         &&
-        !(request.headers |> List.contains { name: "Hx-History-Restore-Request", value: "true" })
+        !(request.headers |> List.contains { name: "Hx-History-Restore-Request", value: "true" |> Str.toUtf8 })
 
     if isHxRequest then
         when request.url |> Str.split "/" is
@@ -83,13 +82,13 @@ serveAssets : List Str -> Response
 serveAssets = \path ->
     when path is
         ["styles.css"] ->
-            { body: styles, headers: [{ name: "Content-Type", value: "text/css" }], status: 200 }
+            { body: styles, headers: [{ name: "Content-Type", value: "text/css" |> Str.toUtf8 }], status: 200 }
 
         ["htmx", "htmx.min.js"] ->
-            { body: htmx, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
+            { body: htmx, headers: [{ name: "Content-Type", value: "text/javascript" |> Str.toUtf8 }], status: 200 }
 
         ["_hyperscript", "_hyperscript.min.js"] ->
-            { body: hyperscript, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
+            { body: hyperscript, headers: [{ name: "Content-Type", value: "text/javascript" |> Str.toUtf8 }], status: 200 }
 
         _ ->
             { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
@@ -172,22 +171,17 @@ numToStrWithZero = \n ->
 
 # Update services
 
-updateServices : RequestBody, Model -> Result (Str, Model) [BadRequest Str]
+updateServices : List U8, Model -> Result (Str, Model) [BadRequest Str]
 updateServices = \body, model ->
-    when body is
-        EmptyBody ->
-            Err (BadRequest "empty")
-
-        Body b ->
-            bodyToFields b.body
-            |> Result.try parseCalendarEntries
-            |> Result.try
-                \_services ->
-                    Ok ("hallo", model)
-            |> Result.mapErr
-                \err ->
-                    when err is
-                        InvalidInput msg -> BadRequest msg
+    bodyToFields body
+    |> Result.try parseCalendarEntries
+    |> Result.try
+        \_services ->
+            Ok ("hallo", model)
+    |> Result.mapErr
+        \err ->
+            when err is
+                InvalidInput msg -> BadRequest msg
 
 CalendarObject : {
     veranstaltung : {
