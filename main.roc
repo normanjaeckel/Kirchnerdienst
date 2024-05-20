@@ -5,7 +5,7 @@ app [main, Model] {
 }
 
 import webserver.Webserver exposing [Request, Response]
-import html.Attribute exposing [attribute, class, name, type, value]
+import html.Attribute exposing [attribute, class, name, style, type, value]
 import html.Html exposing [Node, button, form, h1, h2, input, p, renderWithoutDocType, section, span, text]
 import json.Json
 import "index.html" as index : Str
@@ -156,8 +156,8 @@ serviceLine = \service ->
         p [] [text service.description],
         p [] [text "Leitung: $(service.pastor)"],
         p [class "person-line"] [
-            span [] [text "Kirchner/in: ", buttonOrName Assistant service.id service.assistant],
-            span [] [text "Lektor/in: ", buttonOrName Reader service.id service.reader],
+            span [class "person"] [text "Kirchner/in: ", buttonOrName Assistant service.id service.assistant],
+            span [class "person"] [text "Lektor/in: ", buttonOrName Reader service.id service.reader],
         ],
     ]
 
@@ -171,7 +171,7 @@ buttonOrName = \staff, serviceId, person ->
             ]
             [text "Noch frei"]
     else
-        text person
+        span [] [span [style "margin-right:0.5em;"] [text person], button [] [text "Bearbeiten"]]
 
 dateToStr : Datetime -> Str
 dateToStr = \datetime ->

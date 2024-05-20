@@ -23,7 +23,7 @@ strong {
     color: #333;
 }
 
-.person-line span {
+.person-line .person {
     margin-right: 1em;
 }
 
@@ -41,19 +41,11 @@ strong {
         flex-direction: column;
     }
 
-    .person-line span {
+    .person-line .person {
         margin-bottom: 1em;
     }
 
     .person-form input {
-        margin-bottom: .5em;
+        margin-bottom: 0.5em;
     }
 }
-
-/* form label input {
-    margin-left: 0.5em;
-}
-
-form label textarea {
-    margin-left: 0.5em;
-} */
