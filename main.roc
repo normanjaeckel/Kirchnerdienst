@@ -5,14 +5,13 @@ app [main, Model] {
 }
 
 import webserver.Webserver exposing [Request, Response]
-# html.Attribute.{ attribute },
-import html.Html exposing [Node, button, h1, h2, p, renderWithoutDocType, section, span, text]
+import html.Attribute exposing [attribute, class, name, type, value]
+import html.Html exposing [Node, button, form, h1, h2, input, p, renderWithoutDocType, section, span, text]
 import json.Json
 import "index.html" as index : Str
 import "assets/styles.css" as styles : List U8
 import "assets/htmx/htmx.min.js" as htmx : List U8
 import "assets/_hyperscript/_hyperscript.min.js" as hyperscript : List U8
-# "Beispiel.json" as testData : List U8,
 
 Program : {
     decodeModel : [Init, Existing (List U8)] -> Result Model Str,
@@ -70,13 +69,19 @@ handleReadRequest = \request, model ->
             ["", ""] ->
                 listView model |> response200
 
+            ["", "person-form-assistant", serviceId] ->
+                updatePersonForm Assistant serviceId |> response200
+
+            ["", "person-form-reader", serviceId] ->
+                updatePersonForm Reader serviceId |> response200
+
             _ -> response404
     else
         when request.url |> Str.split "/" is
             ["", "assets", .. as subPath] ->
                 serveAssets subPath
 
-            _ -> index |> Str.replaceFirst "{% contentPath %}" request.url |> response200
+            _ -> response200 index
 
 serveAssets : List Str -> Response
 serveAssets = \path ->
@@ -101,11 +106,35 @@ handleWriteRequest = \request, model ->
                 Err (BadRequest msg) ->
                     (response400 msg, model)
 
-                Ok (responseBody, newModel) ->
-                    (response200 responseBody, newModel)
+                Ok newModel ->
+                    (listView newModel |> response200, newModel)
+
+        ["", "person-form-assistant", serviceId] ->
+            when updatePersonPerform Assistant serviceId request.body model is
+                Err (BadRequest msg) ->
+                    (response400 msg, model)
+
+                Ok newModel ->
+                    (listView newModel |> response200, newModel)
+
+        ["", "person-form-reader", serviceId] ->
+            when updatePersonPerform Reader serviceId request.body model is
+                Err (BadRequest msg) ->
+                    (response400 msg, model)
+
+                Ok newModel ->
+                    (listView newModel |> response200, newModel)
 
         _ ->
             (response400 "$(request.url) not found", model)
+
+Staff : [Assistant, Reader]
+
+staffToString : Staff -> Str
+staffToString = \s ->
+    when s is
+        Assistant -> "assistant"
+        Reader -> "reader"
 
 # ListView
 
@@ -122,35 +151,27 @@ listView = \model ->
 
 serviceLine : Service -> Node
 serviceLine = \service ->
-    assistantFreeButton =
-        if service.assistant == "" then
-            [button [] [text "Noch frei"]]
-        else
-            []
-
-    readerFreeButton =
-        if service.reader == "" then
-            [button [] [text "Noch frei"]]
-        else
-            []
-
     section [] [
-        h2 [] [
-            span [] [text "$(dateToStr service.datetime) · $(timeToStr service.datetime) · $(service.location)"],
-            button [] [text "Bearbeiten"],
-            button [] [text "Löschen"],
-        ],
+        h2 [] [text "$(dateToStr service.datetime) · $(timeToStr service.datetime) · $(service.location)"],
         p [] [text service.description],
         p [] [text "Leitung: $(service.pastor)"],
-        p
-            []
-            (
-                [text "Kirchner/in: $(service.assistant)"]
-                |> List.concat assistantFreeButton
-                |> List.concat [text "Lektor/in: $(service.reader)"]
-                |> List.concat readerFreeButton
-            ),
+        p [class "person-line"] [
+            span [] [text "Kirchner/in: ", buttonOrName Assistant service.id service.assistant],
+            span [] [text "Lektor/in: ", buttonOrName Reader service.id service.reader],
+        ],
     ]
+
+buttonOrName : Staff, Str, Str -> Node
+buttonOrName = \staff, serviceId, person ->
+    if person == "" then
+        button
+            [
+                (attribute "hx-get") "/person-form-$(staffToString staff)/$(serviceId)",
+                (attribute "hx-swap") "outerHTML",
+            ]
+            [text "Noch frei"]
+    else
+        text person
 
 dateToStr : Datetime -> Str
 dateToStr = \datetime ->
@@ -171,13 +192,31 @@ numToStrWithZero = \n ->
 
 # Update services
 
-updateServices : List U8, Model -> Result (Str, Model) [BadRequest Str]
+updateServices : List U8, Model -> Result Model [BadRequest Str]
 updateServices = \body, model ->
     bodyToFields body
     |> Result.try parseCalendarEntries
     |> Result.try
-        \_services ->
-            Ok ("hallo", model)
+        \calenderEntries ->
+            calenderEntries
+            |> List.map
+                \entry ->
+                    (assistant, reader) =
+                        model
+                        |> List.findFirst
+                            \service -> service.id == entry.veranstaltung.id
+                        |> Result.map \service -> (service.assistant, service.reader)
+                        |> Result.withDefault ("", "")
+                    {
+                        id: entry.veranstaltung.id,
+                        datetime: transformDatetime entry.veranstaltung.start,
+                        location: entry.veranstaltung.place,
+                        description: "$(entry.veranstaltung.title): $(entry.veranstaltung.subtitle)",
+                        pastor: entry.veranstaltung.pastor,
+                        assistant: assistant,
+                        reader: reader,
+                    }
+            |> Ok
     |> Result.mapErr
         \err ->
             when err is
@@ -188,6 +227,7 @@ CalendarObject : {
         id : Str,
         title : Str,
         subtitle : Str,
+        pastor : Str,
         start : Str,
         place : Str,
     },
@@ -201,6 +241,7 @@ calendarFieldNameMapping = \fieldName ->
         "_event_TITLE" -> "title"
         "SUBTITLE" -> "subtitle"
         "START_RFC" -> "start"
+        "_person_NAME" -> "pastor"
         "_place_NAME" -> "place"
         _ -> fieldName
 
@@ -213,14 +254,74 @@ parseCalendarEntries = \fields ->
     |> Result.mapErr
         \err ->
             when err is
-                NotFound -> InvalidInput "nf"
-                Leftover bytes -> InvalidInput "lo: $(bytes |> Str.fromUtf8 |> Result.withDefault "default")"
-                TooShort -> InvalidInput "Can not parse calendar entries - ts"
+                NotFound -> InvalidInput "Can not parse calendar entries: not found"
+                Leftover bytes -> InvalidInput "Can not parse calendar entries: left over: $(bytes |> Str.fromUtf8 |> Result.withDefault "default")"
+                TooShort -> InvalidInput "Can not parse calendar entries: too short"
 
 expect
     s = "\"St\\u00f6tteritz\""
     got = Decode.fromBytes (s |> Str.toUtf8) Json.utf8
     got == Ok "Stötteritz"
+
+transformDatetime : Str -> Datetime
+transformDatetime = \s ->
+    datetime = s |> Str.toUtf8
+    year = datetime |> List.takeFirst 4 |> Str.fromUtf8 |> Result.try Str.toU64 |> Result.withDefault 0
+    month = datetime |> List.sublist { start: 5, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
+    day = datetime |> List.sublist { start: 8, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
+    hour = datetime |> List.sublist { start: 11, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
+    minute = datetime |> List.sublist { start: 14, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
+    { year, month, day, hour, minute }
+
+# Update person
+
+updatePersonForm : Staff, Str -> Str
+updatePersonForm = \staff, serviceId ->
+    node =
+        form
+            [
+                (attribute "hx-post") "/person-form-$(staffToString staff)/$(serviceId)",
+                (attribute "hx-target") "#mainContent",
+                class "person-form",
+            ]
+            [
+                input [type "text", name "person"],
+                input [type "submit", value "Speichern"],
+                button
+                    [
+                        (attribute "hx-get") "/",
+                        (attribute "hx-target") "#mainContent",
+                    ]
+                    [text "Abbrechen"],
+            ]
+    renderWithoutDocType node
+
+updatePersonPerform : Staff, Str, List U8, Model -> Result Model [BadRequest Str]
+updatePersonPerform = \staff, serviceId, body, model ->
+    bodyToFields body
+    |> Result.try parsePerson
+    |> Result.try
+        \personName ->
+            model
+            |> List.map
+                \service ->
+                    if service.id == serviceId then
+                        when staff is
+                            Assistant -> { service & assistant: personName }
+                            Reader -> { service & reader: personName }
+                    else
+                        service
+            |> Ok
+    |> Result.mapErr
+        \err ->
+            when err is
+                InvalidInput msg -> BadRequest msg
+
+parsePerson : List (Str, List U8) -> Result Str [InvalidInput Str]
+parsePerson = \fields ->
+    fields
+    |> getField "person"
+    |> Result.mapErr \_ -> InvalidInput "assistant not found in body"
 
 # newServiceForm : Str
 # newServiceForm =

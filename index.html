@@ -22,9 +22,9 @@
 </head>
 
 <body>
-    <div id="mainContent" hx-get="{% contentPath %}" hx-trigger="load"></div>
+    <div id="mainContent"></div>
     <input id="updateServices" name="data" hx-post="/update-services" hx-trigger="sendUpdateServices"
-        style="display: none;" />
+        hx-target="#mainContent" style="display: none;" />
 </body>
 
 </html>

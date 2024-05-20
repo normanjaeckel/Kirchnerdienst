@@ -23,18 +23,37 @@ strong {
     color: #333;
 }
 
-button {
-    margin-left: 1em;
+.person-line span {
+    margin-right: 1em;
 }
 
-button:first-child {
-    margin-left: 0em;
+.person-form {
+    display: inline;
 }
 
-form label input {
+.person-form input {
+    margin-right: .5em;
+}
+
+@media screen and (max-width: 767px) {
+    .person-line {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .person-line span {
+        margin-bottom: 1em;
+    }
+
+    .person-form input {
+        margin-bottom: .5em;
+    }
+}
+
+/* form label input {
     margin-left: 0.5em;
 }
 
 form label textarea {
     margin-left: 0.5em;
-}
+} */
