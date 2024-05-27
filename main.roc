@@ -152,7 +152,14 @@ listView = \model ->
         Html.main
             []
             (
-                [h1 [] [text "Kirchnerliste"]]
+                [
+                    h1 [] [text "Kirchnerliste"],
+                    section [] [
+                        h2 [] [text "Erläuterungen"],
+                        p [] [text "Wenn bei Lektor/in niemand eingetragen ist, übernimmt der/die Kirchner/in auch die Lesungen."],
+                        p [] [text "Abkürzungen: +AM = mit Abendmahl, +Kur = mit Kurrende, +Chor = mit Kantorei, +Pos = mit Posaunenchor, +KiGo = mit Kindergottesdienst, +KiKa = anschließend Kirchenkaffee, +FamBra = anschließend Familienbrunch"]
+                    ],
+                ]
                 |> List.concat (model |> List.map serviceLine)
             )
     renderWithoutDocType node
