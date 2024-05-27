@@ -13,39 +13,59 @@ section {
     padding-bottom: 1em;
 }
 
-section h2:first-child {
-    margin-top: 0em;
-}
-
 h1,
 h2,
 strong {
     color: #333;
 }
 
-.person-line .person {
-    margin-right: 1em;
+h2,
+p {
+    margin: 0;
+    padding-top: 0.5em;
+    padding-bottom: 0.5em;
 }
 
-.person-form {
+.person-line {
+    display: flex;
+}
+
+.person-line p {
+    max-width: 67%;
+    margin-left: 0.5em;
+    margin-right: 0.5em;
+}
+
+.person-line p:first-child {
+    margin-left: 0;
+}
+
+.person-line p:last-child {
+    margin-right: 0em;
+}
+
+
+.person-line .info-form {
     display: inline;
 }
 
-.person-form input {
+.info-form input,
+.info-form textarea {
     margin-right: .5em;
 }
 
 @media screen and (max-width: 767px) {
     .person-line {
-        display: flex;
         flex-direction: column;
     }
 
-    .person-line .person {
-        margin-bottom: 1em;
+    .person-line p {
+        margin-left: 0;
+        margin-right: 0;
     }
 
-    .person-form input {
+    .info-form input,
+    .info-form textarea {
         margin-bottom: 0.5em;
     }
 }

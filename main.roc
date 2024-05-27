@@ -1,12 +1,12 @@
 app [main, Model] {
-    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.2/zlcCcrA9VofMd0mIrHEGwktucdmnq7xPIOuVNgY8EjE.tar.br",
+    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.3/e8Mu5IplmOnXPU9VgpTCT6kyB463gX-SDC2nnMfAq7M.tar.br",
     html: "vendor/roc-html/src/main.roc", # https://github.com/Hasnep/roc-html/releases/tag/v0.6.0
     json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.10.0
 }
 
 import webserver.Webserver exposing [Request, Response]
-import html.Attribute exposing [attribute, class, name, style, type, value]
-import html.Html exposing [Node, button, form, h1, h2, input, p, renderWithoutDocType, section, span, text]
+import html.Attribute exposing [attribute, class, name, rows, style, type, value]
+import html.Html exposing [Node, button, div, form, h1, h2, input, p, renderWithoutDocType, section, span, text, textarea]
 import json.Json
 import "index.html" as index : Str
 import "assets/styles.css" as styles : List U8
@@ -30,6 +30,7 @@ Service : {
     pastor : Str,
     assistant : Str,
     reader : Str,
+    notes : Str,
 }
 
 Datetime : {
@@ -69,11 +70,13 @@ handleReadRequest = \request, model ->
             ["", ""] ->
                 listView model |> response200
 
-            ["", "person-form-assistant", serviceId] ->
-                updatePersonForm Assistant serviceId |> response200
+            ["", "info-form", info, serviceId] ->
+                service = model |> List.findFirst \s -> s.id == serviceId
+                when (stringToInfo info, service) is
+                    (Ok inf, Ok serv) ->
+                        updateInfoForm inf serviceId serv |> response200
 
-            ["", "person-form-reader", serviceId] ->
-                updatePersonForm Reader serviceId |> response200
+                    _ -> response404
 
             _ -> response404
     else
@@ -109,32 +112,37 @@ handleWriteRequest = \request, model ->
                 Ok newModel ->
                     (listView newModel |> response200, newModel)
 
-        ["", "person-form-assistant", serviceId] ->
-            when updatePersonPerform Assistant serviceId request.body model is
-                Err (BadRequest msg) ->
-                    (response400 msg, model)
+        ["", "info-form", info, serviceId] ->
+            when stringToInfo info is
+                Ok inf ->
+                    when updateInfoPerform inf serviceId request.body model is
+                        Err (BadRequest msg) ->
+                            (response400 msg, model)
 
-                Ok newModel ->
-                    (listView newModel |> response200, newModel)
+                        Ok newModel ->
+                            (listView newModel |> response200, newModel)
 
-        ["", "person-form-reader", serviceId] ->
-            when updatePersonPerform Reader serviceId request.body model is
-                Err (BadRequest msg) ->
-                    (response400 msg, model)
-
-                Ok newModel ->
-                    (listView newModel |> response200, newModel)
+                Err NotFound -> (response400 "$(request.url) not found", model)
 
         _ ->
             (response400 "$(request.url) not found", model)
 
-Staff : [Assistant, Reader]
+Info : [Assistant, Reader, Notes]
 
-staffToString : Staff -> Str
-staffToString = \s ->
+infoToString : Info -> Str
+infoToString = \s ->
     when s is
         Assistant -> "assistant"
         Reader -> "reader"
+        Notes -> "notes"
+
+stringToInfo : Str -> Result Info [NotFound]
+stringToInfo = \s ->
+    when s is
+        "assistant" -> Ok Assistant
+        "reader" -> Ok Reader
+        "notes" -> Ok Notes
+        _ -> Err NotFound
 
 # ListView
 
@@ -155,23 +163,33 @@ serviceLine = \service ->
         h2 [] [text "$(dateToStr service.datetime) · $(timeToStr service.datetime) · $(service.location)"],
         p [] [text service.description],
         p [] [text "Leitung: $(service.pastor)"],
-        p [class "person-line"] [
-            span [class "person"] [text "Kirchner/in: ", buttonOrName Assistant service.id service.assistant],
-            span [class "person"] [text "Lektor/in: ", buttonOrName Reader service.id service.reader],
+        div [class "person-line"] [
+            p [class "info"] [text "Kirchner/in: ", buttonOrText Assistant service.id service.assistant],
+            p [class "info"] [text "Lektor/in: ", buttonOrText Reader service.id service.reader],
         ],
+        p [class "info"] [text "Bemerkungen: ", buttonOrText Notes service.id service.notes],
     ]
 
-buttonOrName : Staff, Str, Str -> Node
-buttonOrName = \staff, serviceId, person ->
-    if person == "" then
+buttonOrText : Info, Str, Str -> Node
+buttonOrText = \info, serviceId, infoText ->
+    if infoText == "" then
         button
             [
-                (attribute "hx-get") "/person-form-$(staffToString staff)/$(serviceId)",
+                (attribute "hx-get") "/info-form/$(infoToString info)/$(serviceId)",
                 (attribute "hx-swap") "outerHTML",
             ]
             [text "Noch frei"]
     else
-        span [] [span [style "margin-right:0.5em;"] [text person], button [] [text "Bearbeiten"]]
+        span [] [
+            span [style "margin-right:0.5em;"] [text infoText],
+            button
+                [
+                    (attribute "hx-get") "/info-form/$(infoToString info)/$(serviceId)",
+                    (attribute "hx-target") "closest .info span",
+                    (attribute "hx-swap") "outerHTML",
+                ]
+                [text "Bearbeiten"],
+        ]
 
 dateToStr : Datetime -> Str
 dateToStr = \datetime ->
@@ -201,12 +219,12 @@ updateServices = \body, model ->
             calenderEntries
             |> List.map
                 \entry ->
-                    (assistant, reader) =
+                    (assistant, reader, notes) =
                         model
                         |> List.findFirst
                             \service -> service.id == entry.veranstaltung.id
-                        |> Result.map \service -> (service.assistant, service.reader)
-                        |> Result.withDefault ("", "")
+                        |> Result.map \service -> (service.assistant, service.reader, service.notes)
+                        |> Result.withDefault ("", "", "")
                     {
                         id: entry.veranstaltung.id,
                         datetime: transformDatetime entry.veranstaltung.start,
@@ -215,6 +233,7 @@ updateServices = \body, model ->
                         pastor: entry.veranstaltung.pastor,
                         assistant: assistant,
                         reader: reader,
+                        notes: notes,
                     }
             |> Ok
     |> Result.mapErr
@@ -273,19 +292,32 @@ transformDatetime = \s ->
     minute = datetime |> List.sublist { start: 14, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
     { year, month, day, hour, minute }
 
-# Update person
+# Update info
 
-updatePersonForm : Staff, Str -> Str
-updatePersonForm = \staff, serviceId ->
+updateInfoForm : Info, Str, Service -> Str
+updateInfoForm = \info, serviceId, service ->
+    inputField : Node
+    inputField =
+        when info is
+            Assistant ->
+                input [type "text", name "info", value service.assistant]
+
+            Reader ->
+                input [type "text", name "info", value service.reader]
+
+            Notes ->
+                textarea [name "info", rows "5", style "width:95%"] [text service.notes]
+
+    node : Node
     node =
         form
             [
-                (attribute "hx-post") "/person-form-$(staffToString staff)/$(serviceId)",
+                (attribute "hx-post") "/info-form/$(infoToString info)/$(serviceId)",
                 (attribute "hx-target") "#mainContent",
-                class "person-form",
+                class "info-form",
             ]
             [
-                input [type "text", name "person"],
+                inputField,
                 input [type "submit", value "Speichern"],
                 button
                     [
@@ -296,19 +328,20 @@ updatePersonForm = \staff, serviceId ->
             ]
     renderWithoutDocType node
 
-updatePersonPerform : Staff, Str, List U8, Model -> Result Model [BadRequest Str]
-updatePersonPerform = \staff, serviceId, body, model ->
+updateInfoPerform : Info, Str, List U8, Model -> Result Model [BadRequest Str]
+updateInfoPerform = \info, serviceId, body, model ->
     bodyToFields body
-    |> Result.try parsePerson
+    |> Result.try parseInfo
     |> Result.try
-        \personName ->
+        \infoText ->
             model
             |> List.map
                 \service ->
                     if service.id == serviceId then
-                        when staff is
-                            Assistant -> { service & assistant: personName }
-                            Reader -> { service & reader: personName }
+                        when info is
+                            Assistant -> { service & assistant: infoText }
+                            Reader -> { service & reader: infoText }
+                            Notes -> { service & notes: infoText }
                     else
                         service
             |> Ok
@@ -317,117 +350,11 @@ updatePersonPerform = \staff, serviceId, body, model ->
             when err is
                 InvalidInput msg -> BadRequest msg
 
-parsePerson : List (Str, List U8) -> Result Str [InvalidInput Str]
-parsePerson = \fields ->
+parseInfo : List (Str, List U8) -> Result Str [InvalidInput Str]
+parseInfo = \fields ->
     fields
-    |> getField "person"
-    |> Result.mapErr \_ -> InvalidInput "assistant not found in body"
-
-# newServiceForm : Str
-# newServiceForm =
-#     node =
-#         form
-#             [
-#                 (attribute "hx-post") "/new-service",
-#                 (attribute "hx-target") "#mainContent",
-#             ]
-#             [
-#                 p [] [
-#                     label [] [
-#                         text "Uhrzeit:",
-#                         input [type "datetime-local", name "datetime", required ""],
-#                     ],
-#                 ],
-#                 p [] [
-#                     label [] [
-#                         text "Ort:",
-#                         input [type "text", name "location", required ""],
-#                     ],
-#                 ],
-#                 p [] [
-#                     label [] [
-#                         text "Text:",
-#                         textarea [name "description", rows "4", required ""] [],
-#                     ],
-#                 ],
-#                 p [] [
-#                     label [] [
-#                         text "Pfarrer/in:",
-#                         input [type "text", name "pastor"],
-#                     ],
-#                 ],
-#                 p [] [
-#                     input [type "submit", value "Speichern"],
-#                     button
-#                         [
-#                             (attribute "hx-get") "/",
-#                             (attribute "hx-target") "#mainContent",
-#                         ]
-#                         [text "Abbrechen"],
-#                 ],
-#             ]
-#     renderWithoutDocType node
-
-# newServicePerform : RequestBody, Model -> Result (Str, Model) [BadRequest]
-# newServicePerform = \body, model ->
-#     when body is
-#         EmptyBody ->
-#             Err BadRequest
-
-#         Body b ->
-#             bodyToFields b.body
-#             |> Result.try newServiceParseFields
-#             |> Result.try
-#                 \newService ->
-#                     newModel =
-#                         model
-#                         |> List.append {
-#                             datetime: newService.datetime,
-#                             location: newService.location,
-#                             description: newService.description,
-#                             pastor: newService.pastor,
-#                             assistant: "",
-#                             reader: "",
-#                         }
-#                     Ok (listView newModel, newModel)
-#             |> Result.mapErr
-#                 \err ->
-#                     when err is
-#                         InvalidInput -> BadRequest
-
-# newServiceParseFields : List (Str, List U8) -> Result { datetime : Datetime, location : Str, description : Str, pastor : Str } [InvalidInput]
-# newServiceParseFields = \fields ->
-#     dt = fields |> getField "datetime"
-#     loc = fields |> getField "location"
-#     desc = fields |> getField "description"
-#     pas = fields |> getField "pastor"
-
-#     when (dt, loc, desc, pas) is
-#         (Ok datetimeStr, Ok location, Ok description, Ok pastor) ->
-#             if datetimeStr == "" || location == "" || description == "" then
-#                 Err InvalidInput
-#             else
-#                 parseDatetime datetimeStr
-#                 |> Result.try
-#                     \datetime -> Ok { datetime, location, description, pastor }
-
-#         _ -> Err InvalidInput
-
-# parseDatetime : Str -> Result Datetime [InvalidInput]
-# parseDatetime = \datetime ->
-#     when datetime |> Str.split "T" is
-#         [date, time] ->
-#             when (date |> Str.split "-", time |> Str.split ":") is
-#                 ([y, mo, d], [h, mi]) ->
-#                     when (Str.toU64 y, Str.toU8 mo, Str.toU8 d, Str.toU8 h, Str.toU8 mi) is
-#                         (Ok year, Ok month, Ok day, Ok hour, Ok minute) ->
-#                             Ok { year, month, day, hour, minute }
-
-#                         _ -> Err InvalidInput
-
-#                 _ -> Err InvalidInput
-
-#         _ -> Err InvalidInput
+    |> getField "info"
+    |> Result.mapErr \_ -> InvalidInput "info not found in body"
 
 # Shared
 
