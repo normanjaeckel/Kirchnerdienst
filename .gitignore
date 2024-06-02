@@ -17,3 +17,6 @@ devenv.local.nix
 
 # Task
 .task/
+
+# Private
+private/
