@@ -1,0 +1,40 @@
+---
+name: Publish Docker image
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  TAG: latest
+
+jobs:
+  publish-image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Log into registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" |
+          docker login $REGISTRY --username ${{ github.actor }} --password-stdin
+
+      - name: Build Docker image
+        run: |
+          IMAGE_NAME=$(echo $IMAGE_NAME | tr '[A-Z]' '[a-z]')
+          docker build . --tag $REGISTRY/$IMAGE_NAME:$TAG
+
+      - name: Push Docker image to registry
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          IMAGE_NAME=$(echo $IMAGE_NAME | tr '[A-Z]' '[a-z]')
+          docker push $REGISTRY/$IMAGE_NAME:$TAG
