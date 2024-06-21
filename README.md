@@ -1,6 +1,6 @@
 # Kirchnerdienst
 
-A small tool to manage the working times of church assistants.
+A small tool to manage the working times of church assistants of our parish.
 
 Clone this repository including submodules:
 
