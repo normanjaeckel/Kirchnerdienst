@@ -33,7 +33,7 @@ on the host:
     docker run --detach \
         --name my-app \
         --rm \
-        --mount source=my-volume,target=/database
+        --mount source=my-volume,target=/database \
         --publish-all \
         ghcr.io/normanjaeckel/kirchnerdienst
 
