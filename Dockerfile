@@ -17,8 +17,9 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/normanjaeckel/Kirchnerdienst"
 LABEL org.opencontainers.image.documentation="https://github.com/normanjaeckel/Kirchnerdienst/blob/main/README.md"
 
-
 COPY --from=builder /app/main /
+
+RUN mkdir /database
 
 EXPOSE 8090
 
