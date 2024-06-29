@@ -22,4 +22,4 @@ COPY --from=builder /app/main /
 
 EXPOSE 8090
 
-ENTRYPOINT ["/main"]
+ENTRYPOINT ["/main", "--snapshot-file=\"/database/db.snapshot\"", "--requests-file=\"/database/db.requests\""]
