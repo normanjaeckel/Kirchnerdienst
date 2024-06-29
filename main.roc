@@ -157,7 +157,7 @@ listView = \model ->
                     section [] [
                         h2 [] [text "Erläuterungen"],
                         p [] [text "Wenn bei Lektor/in niemand eingetragen ist, übernimmt der/die Kirchner/in auch die Lesungen."],
-                        p [] [text "Abkürzungen: +AM = mit Abendmahl, +Kur = mit Kurrende, +Chor = mit Kantorei, +Pos = mit Posaunenchor, +KiGo = mit Kindergottesdienst, +KiKa = anschließend Kirchenkaffee, +FamBra = anschließend Familienbrunch"]
+                        p [] [text "Abkürzungen: +AM = mit Abendmahl, +Kur = mit Kurrende, +Chor = mit Kantorei, +Pos = mit Posaunenchor, +KiGo = mit Kindergottesdienst, +KiKa = anschließend Kirchenkaffee, +FamBra = anschließend Familienbrunch"],
                     ],
                 ]
                 |> List.concat (model |> List.map serviceLine)
@@ -380,23 +380,23 @@ response404 =
 bodyToFields : List U8 -> Result (List (Str, List U8)) [InvalidInput Str]
 bodyToFields = \body ->
     body
-    |> urlDecode
-    |> Result.try
-        \r ->
-            r
-            |> splitListU8 '&'
-            |> List.mapTry
-                \elem ->
-                    when elem |> splitListU8 '=' is
-                        [elemName, elemValue] ->
-                            when elemName |> Str.fromUtf8 is
+    |> splitListU8 '&'
+    |> List.mapTry
+        \elem ->
+            when elem |> splitListU8 '=' is
+                [elemName, elemValue] ->
+                    elemName
+                    |> urlDecode
+                    |> Result.try
+                        \eName ->
+                            when eName |> Str.fromUtf8 is
                                 Ok n ->
-                                    Ok (n, elemValue)
+                                    elemValue |> urlDecode |> Result.try \val -> Ok (n, val)
 
                                 Err (BadUtf8 _ _) ->
                                     Err (InvalidInput "Can not decode some key")
 
-                        _ -> Err (InvalidInput "Can not split up key-value pairs at equal sign")
+                _ -> Err (InvalidInput "Can not split up key-value pairs at equal sign")
 
 expect
     got = bodyToFields ("foo=bar&val=baz" |> Str.toUtf8)
@@ -405,6 +405,30 @@ expect
 expect
     got = bodyToFields ("invalid&val=baz" |> Str.toUtf8)
     got == Err (InvalidInput "Can not split up key-value pairs at equal sign")
+
+expect
+    got = bodyToFields ("foo=bar%3Dbaz" |> Str.toUtf8)
+    got == Ok ([("foo", "bar=baz" |> Str.toUtf8)])
+
+splitListU8 : List U8, U8 -> List (List U8)
+splitListU8 = \list, char ->
+    list
+    |> List.walk
+        ([], [])
+        \(current, result), elem ->
+            if elem == char then
+                ([], result |> List.append current)
+            else
+                (current |> List.append elem, result)
+    |> \(current, result) ->
+        result |> List.append current
+
+expect splitListU8 [] 'a' == [[]]
+expect splitListU8 ['a', 'b', 'c'] 'b' == [['a'], ['c']]
+expect splitListU8 ['a', 'b', 'c'] 'c' == [['a', 'b'], []]
+expect splitListU8 ['a', 'b', 'c'] 'a' == [[], ['b', 'c']]
+expect splitListU8 ['a', 'b', 'b', 'c'] 'b' == [['a'], [], ['c']]
+expect splitListU8 ['a', 'b', 'c', 'b', 'd'] 'b' == [['a'], ['c'], ['d']]
 
 urlDecode : List U8 -> Result (List U8) [InvalidInput Str]
 urlDecode = \bytes ->
@@ -443,26 +467,6 @@ expect urlDecode ("foo%20bar" |> Str.toUtf8) == Ok ("foo bar" |> Str.toUtf8)
 expect urlDecode ("foo+bar" |> Str.toUtf8) == Ok ("foo bar" |> Str.toUtf8)
 expect urlDecode ("foo%" |> Str.toUtf8) == Err (InvalidInput "Can not decode percent value")
 expect urlDecode ("foo%zz" |> Str.toUtf8) == Err (InvalidInput "Can not decode percent value")
-
-splitListU8 : List U8, U8 -> List (List U8)
-splitListU8 = \list, char ->
-    list
-    |> List.walk
-        ([], [])
-        \(current, result), elem ->
-            if elem == char then
-                ([], result |> List.append current)
-            else
-                (current |> List.append elem, result)
-    |> \(current, result) ->
-        result |> List.append current
-
-expect splitListU8 [] 'a' == [[]]
-expect splitListU8 ['a', 'b', 'c'] 'b' == [['a'], ['c']]
-expect splitListU8 ['a', 'b', 'c'] 'c' == [['a', 'b'], []]
-expect splitListU8 ['a', 'b', 'c'] 'a' == [[], ['b', 'c']]
-expect splitListU8 ['a', 'b', 'b', 'c'] 'b' == [['a'], [], ['c']]
-expect splitListU8 ['a', 'b', 'c', 'b', 'd'] 'b' == [['a'], ['c'], ['d']]
 
 getField : List (Str, List U8), Str -> Result Str [InvalidInput Str, NotFound]
 getField = \fields, fieldName ->

@@ -19,6 +19,29 @@ Run
 to see the available options.
 
 
+## Docker image
+
+You can use the Docker image for example like this:
+
+First create a custom volume:
+
+    docker volume create my-volume
+
+Then run the container and publish the container's port onto an ephermeral port
+on the host:
+
+    docker run --detach \
+        --name my-app \
+        --rm \
+        --mount source=my-volume,target=/database
+        --publish-all \
+        ghcr.io/normanjaeckel/kirchnerdienst
+
+List containers to see port that was chosen:
+
+    docker container ls
+
+
 ## License
 
 [MIT](LICENSE)
