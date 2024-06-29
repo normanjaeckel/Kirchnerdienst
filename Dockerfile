@@ -6,8 +6,6 @@ COPY assets assets/
 COPY vendor vendor/
 COPY index.html main.roc ./
 
-RUN ["mkdir", "database"]
-
 RUN ["roc", "build"]
 
 
@@ -19,8 +17,12 @@ LABEL org.opencontainers.image.licenses="MIT"
 LABEL org.opencontainers.image.source="https://github.com/normanjaeckel/Kirchnerdienst"
 LABEL org.opencontainers.image.documentation="https://github.com/normanjaeckel/Kirchnerdienst/blob/main/README.md"
 
-COPY --from=builder /app/main /app/database /
+COPY --from=builder /app/main /
+
+VOLUME ["/database"]
 
 EXPOSE 8090
+
+STOPSIGNAL SIGINT
 
 ENTRYPOINT ["/main", "--snapshot-file=/database/db.snapshot", "--requests-file=/database/db.requests"]
