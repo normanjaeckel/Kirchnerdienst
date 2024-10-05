@@ -37,7 +37,7 @@ on the host:
         --publish-all \
         ghcr.io/normanjaeckel/kirchnerdienst
 
-List containers to see port that was chosen:
+List containers to see the port that was chosen:
 
     docker container ls
 
