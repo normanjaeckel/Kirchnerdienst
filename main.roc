@@ -1,10 +1,11 @@
-app [main, Model] {
-    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.3/e8Mu5IplmOnXPU9VgpTCT6kyB463gX-SDC2nnMfAq7M.tar.br",
+app [init_model, update_model, handle_request!, Model] {
+    # webserver: platform "https://github.com/ostcar/kingfisher/releases/download/...",
+    webserver: platform "vendor/kingfisher/platform/main.roc",
     html: "vendor/roc-html/src/main.roc", # https://github.com/Hasnep/roc-html/releases/tag/v0.6.0
-    json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.10.0
+    json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.11.0
 }
 
-import webserver.Webserver exposing [Request, Response]
+import webserver.Http exposing [Request, Response]
 import html.Attribute exposing [attribute, class, name, rows, style, type, value]
 import html.Html exposing [Node, button, div, form, h1, h2, input, p, renderWithoutDocType, section, span, text, textarea]
 import json.Json
@@ -12,13 +13,6 @@ import "index.html" as index : Str
 import "assets/styles.css" as styles : List U8
 import "assets/htmx/htmx.min.js" as htmx : List U8
 import "assets/_hyperscript/_hyperscript.min.js" as hyperscript : List U8
-
-Program : {
-    decodeModel : [Init, Existing (List U8)] -> Result Model Str,
-    encodeModel : Model -> List U8,
-    handleReadRequest : Request, Model -> Response,
-    handleWriteRequest : Request, Model -> (Response, Model),
-}
 
 Model : List Service
 
@@ -41,32 +35,48 @@ Datetime : {
     minute : U8,
 }
 
-main : Program
-main = { decodeModel, encodeModel, handleReadRequest, handleWriteRequest }
+init_model : Model
+init_model =
+    []
 
-decodeModel : [Init, Existing (List U8)] -> Result Model Str
-decodeModel = \fromPlatform ->
-    when fromPlatform is
-        Init ->
-            Ok []
+update_model : Model, List (List U8) -> Result Model [ListWasEmpty, DecodeError]
+update_model = \_model, events ->
+    when events |> List.last is
+        Err ListWasEmpty -> Ok init_model
+        Ok event -> event |> decodeModel
 
-        Existing encoded ->
-            Decode.fromBytes encoded Json.utf8
-            |> Result.mapErr \_ -> "Error: Can not decode snapshot."
+handle_request! : Request, Model => Result Response _
+handle_request! = \request, model ->
+    when request.method is
+        Get ->
+            handleReadRequest request model |> Ok
 
-encodeModel : Model -> List U8
-encodeModel = \model ->
+        Post save_event! ->
+            (resp, new_model) = handleWriteRequest request model
+            save_event! (encode_model new_model)
+            Ok resp
+
+        _ ->
+            Err (SomeErr "Some error string")
+
+decodeModel : List U8 -> Result Model [DecodeError]
+decodeModel = \encoded ->
+    Decode.fromBytes encoded Json.utf8
+    |> Result.mapErr \_ -> DecodeError
+
+encode_model : Model -> List U8
+encode_model = \model ->
     Encode.toBytes model Json.utf8
 
 handleReadRequest : Request, Model -> Response
 handleReadRequest = \request, model ->
     isHxRequest =
-        (request.headers |> List.contains { name: "Hx-Request", value: "true" |> Str.toUtf8 })
+        (request.headers |> List.contains { name: "Hx-Request", value: "true" })
         &&
-        !(request.headers |> List.contains { name: "Hx-History-Restore-Request", value: "true" |> Str.toUtf8 })
+        !(request.headers |> List.contains { name: "Hx-History-Restore-Request", value: "true" })
 
     if isHxRequest then
-        when request.url |> Str.split "/" is
+        when request.url |> Str.splitOn "/" is
             ["", ""] ->
                 listView model |> response200
 
@@ -80,7 +90,7 @@ handleReadRequest = \request, model ->
 
             _ -> response404
     else
-        when request.url |> Str.split "/" is
+        when request.url |> Str.splitOn "/" is
             ["", "assets", .. as subPath] ->
                 serveAssets subPath
 
@@ -90,20 +100,20 @@ serveAssets : List Str -> Response
 serveAssets = \path ->
     when path is
         ["styles.css"] ->
-            { body: styles, headers: [{ name: "Content-Type", value: "text/css" |> Str.toUtf8 }], status: 200 }
+            { body: styles, headers: [{ name: "Content-Type", value: "text/css" }], status: 200 }
 
         ["htmx", "htmx.min.js"] ->
-            { body: htmx, headers: [{ name: "Content-Type", value: "text/javascript" |> Str.toUtf8 }], status: 200 }
+            { body: htmx, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
 
         ["_hyperscript", "_hyperscript.min.js"] ->
-            { body: hyperscript, headers: [{ name: "Content-Type", value: "text/javascript" |> Str.toUtf8 }], status: 200 }
+            { body: hyperscript, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
 
         _ ->
             { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
 handleWriteRequest : Request, Model -> (Response, Model)
 handleWriteRequest = \request, model ->
-    when request.url |> Str.split "/" is
+    when request.url |> Str.splitOn "/" is
         ["", "update-services"] ->
             when updateServices request.body model is
                 Err (BadRequest msg) ->

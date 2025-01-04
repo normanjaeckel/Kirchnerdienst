@@ -1,8 +1,7 @@
 # Patterns of intentionally untracked files that Git should ignore
 
 main
-db.requests
-db.snapshot
+db.events
 
 # Roc
 roc-dir/
