@@ -43,24 +43,24 @@ update_model : Model, List (List U8) -> Result Model [ListWasEmpty, DecodeError]
 update_model = \_model, events ->
     when events |> List.last is
         Err ListWasEmpty -> Ok init_model
-        Ok event -> event |> decodeModel
+        Ok event -> event |> decode_model
 
 handle_request! : Request, Model => Result Response _
 handle_request! = \request, model ->
     when request.method is
         Get ->
-            handleReadRequest request model |> Ok
+            handle_read_request request model |> Ok
 
         Post save_event! ->
-            (resp, new_model) = handleWriteRequest request model
+            (resp, new_model) = handle_write_request request model
             save_event! (encode_model new_model)
             Ok resp
 
         _ ->
             Err (SomeErr "Some error string")
 
-decodeModel : List U8 -> Result Model [DecodeError]
-decodeModel = \encoded ->
+decode_model : List U8 -> Result Model [DecodeError]
+decode_model = \encoded ->
     Decode.fromBytes encoded Json.utf8
     |> Result.mapErr \_ -> DecodeError
 
@@ -68,36 +68,36 @@ encode_model : Model -> List U8
 encode_model = \model ->
     Encode.toBytes model Json.utf8
 
-handleReadRequest : Request, Model -> Response
-handleReadRequest = \request, model ->
-    isHxRequest =
+handle_read_request : Request, Model -> Response
+handle_read_request = \request, model ->
+    is_hx_request =
         (request.headers |> List.contains { name: "Hx-Request", value: "true" })
         &&
         !(request.headers |> List.contains { name: "Hx-History-Restore-Request", value: "true" })
 
-    if isHxRequest then
+    if is_hx_request then
         when request.url |> Str.splitOn "/" is
             ["", ""] ->
-                listView model |> response200
+                list_view model |> response200
 
-            ["", "info-form", info, serviceId] ->
-                service = model |> List.findFirst \s -> s.id == serviceId
-                when (stringToInfo info, service) is
+            ["", "info-form", info, service_id] ->
+                service = model |> List.findFirst \s -> s.id == service_id
+                when (string_to_info info, service) is
                     (Ok inf, Ok serv) ->
-                        updateInfoForm inf serviceId serv |> response200
+                        update_info_form inf service_id serv |> response200
 
                     _ -> response404
 
             _ -> response404
     else
         when request.url |> Str.splitOn "/" is
-            ["", "assets", .. as subPath] ->
-                serveAssets subPath
+            ["", "assets", .. as sub_path] ->
+                serve_assets sub_path
 
             _ -> response200 index
 
-serveAssets : List Str -> Response
-serveAssets = \path ->
+serve_assets : List Str -> Response
+serve_assets = \path ->
     when path is
         ["styles.css"] ->
             { body: styles, headers: [{ name: "Content-Type", value: "text/css" }], status: 200 }
@@ -111,26 +111,26 @@ serveAssets = \path ->
         _ ->
             { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
-handleWriteRequest : Request, Model -> (Response, Model)
-handleWriteRequest = \request, model ->
+handle_write_request : Request, Model -> (Response, Model)
+handle_write_request = \request, model ->
     when request.url |> Str.splitOn "/" is
         ["", "update-services"] ->
-            when updateServices request.body model is
+            when update_services request.body model is
                 Err (BadRequest msg) ->
                     (response400 msg, model)
 
                 Ok newModel ->
-                    (listView newModel |> response200, newModel)
+                    (list_view newModel |> response200, newModel)
 
         ["", "info-form", info, serviceId] ->
-            when stringToInfo info is
+            when string_to_info info is
                 Ok inf ->
-                    when updateInfoPerform inf serviceId request.body model is
+                    when update_info_perform inf serviceId request.body model is
                         Err (BadRequest msg) ->
                             (response400 msg, model)
 
                         Ok newModel ->
-                            (listView newModel |> response200, newModel)
+                            (list_view newModel |> response200, newModel)
 
                 Err NotFound -> (response400 "$(request.url) not found", model)
 
@@ -139,25 +139,25 @@ handleWriteRequest = \request, model ->
 
 Info : [Assistant, Reader, Notes]
 
-infoToString : Info -> Str
-infoToString = \s ->
+info_to_string : Info -> Str
+info_to_string = \s ->
     when s is
         Assistant -> "assistant"
         Reader -> "reader"
         Notes -> "notes"
 
-stringToInfo : Str -> Result Info [NotFound]
-stringToInfo = \s ->
+string_to_info : Str -> Result Info [NotFound]
+string_to_info = \s ->
     when s is
         "assistant" -> Ok Assistant
         "reader" -> Ok Reader
         "notes" -> Ok Notes
         _ -> Err NotFound
 
-# ListView
+# List_view
 
-listView : Model -> Str
-listView = \model ->
+list_view : Model -> Str
+list_view = \model ->
     node =
         Html.main
             []
@@ -170,29 +170,29 @@ listView = \model ->
                         p [] [text "Abkürzungen: +AM = mit Abendmahl, +Kur = mit Kurrende, +Chor = mit Kantorei, +Pos = mit Posaunenchor, +KiGo = mit Kindergottesdienst, +KiKa = anschließend Kirchenkaffee, +FamBra = anschließend Familienbrunch"],
                     ],
                 ]
-                |> List.concat (model |> List.map serviceLine)
+                |> List.concat (model |> List.map service_line)
             )
     renderWithoutDocType node
 
-serviceLine : Service -> Node
-serviceLine = \service ->
+service_line : Service -> Node
+service_line = \service ->
     section [] [
-        h2 [] [text "$(dateToStr service.datetime) · $(timeToStr service.datetime) · $(service.location)"],
+        h2 [] [text "$(date_to_str service.datetime) · $(time_to_str service.datetime) · $(service.location)"],
         p [] [text service.description],
         p [] [text "Leitung: $(service.pastor)"],
         div [class "person-line"] [
-            p [class "info"] [text "Kirchner/in: ", buttonOrText Assistant service.id service.assistant],
-            p [class "info"] [text "Lektor/in: ", buttonOrText Reader service.id service.reader],
+            p [class "info"] [text "Kirchner/in: ", button_or_text Assistant service.id service.assistant],
+            p [class "info"] [text "Lektor/in: ", button_or_text Reader service.id service.reader],
         ],
-        p [class "info"] [text "Bemerkungen: ", buttonOrText Notes service.id service.notes],
+        p [class "info"] [text "Bemerkungen: ", button_or_text Notes service.id service.notes],
     ]
 
-buttonOrText : Info, Str, Str -> Node
-buttonOrText = \info, serviceId, infoText ->
+button_or_text : Info, Str, Str -> Node
+button_or_text = \info, service_id, infoText ->
     if infoText == "" then
         button
             [
-                (attribute "hx-get") "/info-form/$(infoToString info)/$(serviceId)",
+                (attribute "hx-get") "/info-form/$(info_to_string info)/$(service_id)",
                 (attribute "hx-swap") "outerHTML",
             ]
             [text "Noch frei"]
@@ -201,23 +201,23 @@ buttonOrText = \info, serviceId, infoText ->
             span [style "margin-right:0.5em;"] [text infoText],
             button
                 [
-                    (attribute "hx-get") "/info-form/$(infoToString info)/$(serviceId)",
+                    (attribute "hx-get") "/info-form/$(info_to_string info)/$(service_id)",
                     (attribute "hx-target") "closest .info span",
                     (attribute "hx-swap") "outerHTML",
                 ]
                 [text "Bearbeiten"],
         ]
 
-dateToStr : Datetime -> Str
-dateToStr = \datetime ->
-    "$(numToStrWithZero datetime.day).$(numToStrWithZero datetime.month).$(Num.toStr datetime.year)"
+date_to_str : Datetime -> Str
+date_to_str = \datetime ->
+    "$(num_to_str_with_zero datetime.day).$(num_to_str_with_zero datetime.month).$(Num.toStr datetime.year)"
 
-timeToStr : Datetime -> Str
-timeToStr = \datetime ->
-    "$(numToStrWithZero datetime.hour):$(numToStrWithZero datetime.minute) Uhr"
+time_to_str : Datetime -> Str
+time_to_str = \datetime ->
+    "$(num_to_str_with_zero datetime.hour):$(num_to_str_with_zero datetime.minute) Uhr"
 
-numToStrWithZero : Num * -> Str
-numToStrWithZero = \n ->
+num_to_str_with_zero : Num * -> Str
+num_to_str_with_zero = \n ->
     if
         n < 10
     then
@@ -227,10 +227,10 @@ numToStrWithZero = \n ->
 
 # Update services
 
-updateServices : List U8, Model -> Result Model [BadRequest Str]
-updateServices = \body, model ->
-    bodyToFields body
-    |> Result.try parseCalendarEntries
+update_services : List U8, Model -> Result Model [BadRequest Str]
+update_services = \body, model ->
+    body_to_fields body
+    |> Result.try parse_calendar_entries
     |> Result.try
         \calenderEntries ->
             calenderEntries
@@ -244,7 +244,7 @@ updateServices = \body, model ->
                         |> Result.withDefault ("", "", "")
                     {
                         id: entry.veranstaltung.id,
-                        datetime: transformDatetime entry.veranstaltung.start,
+                        datetime: transform_datetime entry.veranstaltung.start,
                         location: entry.veranstaltung.place,
                         description: "$(entry.veranstaltung.title): $(entry.veranstaltung.subtitle)",
                         pastor: entry.veranstaltung.pastor,
@@ -269,8 +269,8 @@ CalendarObject : {
     },
 }
 
-calendarFieldNameMapping : Str -> Str
-calendarFieldNameMapping = \fieldName ->
+calendar_field_name_mapping : Str -> Str
+calendar_field_name_mapping = \fieldName ->
     when fieldName is
         "Veranstaltung" -> "veranstaltung"
         "ID" -> "id"
@@ -281,11 +281,11 @@ calendarFieldNameMapping = \fieldName ->
         "_place_NAME" -> "place"
         _ -> fieldName
 
-parseCalendarEntries : List (Str, List U8) -> Result (List CalendarObject) [InvalidInput Str]
-parseCalendarEntries = \fields ->
+parse_calendar_entries : List (Str, List U8) -> Result (List CalendarObject) [InvalidInput Str]
+parse_calendar_entries = \fields ->
     fields
     |> List.findFirst \(fieldName, _) -> fieldName == "data"
-    |> Result.try \(_, data) -> Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendarFieldNameMapping })
+    |> Result.try \(_, data) -> Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendar_field_name_mapping })
     |> Result.try \decoded -> Ok decoded
     |> Result.mapErr
         \err ->
@@ -299,8 +299,8 @@ expect
     got = Decode.fromBytes (s |> Str.toUtf8) Json.utf8
     got == Ok "Stötteritz"
 
-transformDatetime : Str -> Datetime
-transformDatetime = \s ->
+transform_datetime : Str -> Datetime
+transform_datetime = \s ->
     datetime = s |> Str.toUtf8
     year = datetime |> List.takeFirst 4 |> Str.fromUtf8 |> Result.try Str.toU64 |> Result.withDefault 0
     month = datetime |> List.sublist { start: 5, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
@@ -311,8 +311,8 @@ transformDatetime = \s ->
 
 # Update info
 
-updateInfoForm : Info, Str, Service -> Str
-updateInfoForm = \info, serviceId, service ->
+update_info_form : Info, Str, Service -> Str
+update_info_form = \info, serviceId, service ->
     inputField : Node
     inputField =
         when info is
@@ -329,7 +329,7 @@ updateInfoForm = \info, serviceId, service ->
     node =
         form
             [
-                (attribute "hx-post") "/info-form/$(infoToString info)/$(serviceId)",
+                (attribute "hx-post") "/info-form/$(info_to_string info)/$(serviceId)",
                 (attribute "hx-target") "#mainContent",
                 class "info-form",
             ]
@@ -345,10 +345,10 @@ updateInfoForm = \info, serviceId, service ->
             ]
     renderWithoutDocType node
 
-updateInfoPerform : Info, Str, List U8, Model -> Result Model [BadRequest Str]
-updateInfoPerform = \info, serviceId, body, model ->
-    bodyToFields body
-    |> Result.try parseInfo
+update_info_perform : Info, Str, List U8, Model -> Result Model [BadRequest Str]
+update_info_perform = \info, serviceId, body, model ->
+    body_to_fields body
+    |> Result.try parse_info
     |> Result.try
         \infoText ->
             model
@@ -367,10 +367,10 @@ updateInfoPerform = \info, serviceId, body, model ->
             when err is
                 InvalidInput msg -> BadRequest msg
 
-parseInfo : List (Str, List U8) -> Result Str [InvalidInput Str]
-parseInfo = \fields ->
+parse_info : List (Str, List U8) -> Result Str [InvalidInput Str]
+parse_info = \fields ->
     fields
-    |> getField "info"
+    |> get_field "info"
     |> Result.mapErr \_ -> InvalidInput "info not found in body"
 
 # Shared
@@ -387,21 +387,21 @@ response404 : Response
 response404 =
     { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
-bodyToFields : List U8 -> Result (List (Str, List U8)) [InvalidInput Str]
-bodyToFields = \body ->
+body_to_fields : List U8 -> Result (List (Str, List U8)) [InvalidInput Str]
+body_to_fields = \body ->
     body
-    |> splitListU8 '&'
+    |> split_list_U8 '&'
     |> List.mapTry
         \elem ->
-            when elem |> splitListU8 '=' is
+            when elem |> split_list_U8 '=' is
                 [elemName, elemValue] ->
                     elemName
-                    |> urlDecode
+                    |> url_decode
                     |> Result.try
                         \eName ->
                             when eName |> Str.fromUtf8 is
                                 Ok n ->
-                                    elemValue |> urlDecode |> Result.try \val -> Ok (n, val)
+                                    elemValue |> url_decode |> Result.try \val -> Ok (n, val)
 
                                 Err (BadUtf8 _ _) ->
                                     Err (InvalidInput "Can not decode some key")
@@ -409,19 +409,19 @@ bodyToFields = \body ->
                 _ -> Err (InvalidInput "Can not split up key-value pairs at equal sign")
 
 expect
-    got = bodyToFields ("foo=bar&val=baz" |> Str.toUtf8)
+    got = body_to_fields ("foo=bar&val=baz" |> Str.toUtf8)
     got == Ok ([("foo", "bar" |> Str.toUtf8), ("val", "baz" |> Str.toUtf8)])
 
 expect
-    got = bodyToFields ("invalid&val=baz" |> Str.toUtf8)
+    got = body_to_fields ("invalid&val=baz" |> Str.toUtf8)
     got == Err (InvalidInput "Can not split up key-value pairs at equal sign")
 
 expect
-    got = bodyToFields ("foo=bar%3Dbaz" |> Str.toUtf8)
+    got = body_to_fields ("foo=bar%3Dbaz" |> Str.toUtf8)
     got == Ok ([("foo", "bar=baz" |> Str.toUtf8)])
 
-splitListU8 : List U8, U8 -> List (List U8)
-splitListU8 = \list, char ->
+split_list_U8 : List U8, U8 -> List (List U8)
+split_list_U8 = \list, char ->
     list
     |> List.walk
         ([], [])
@@ -433,15 +433,15 @@ splitListU8 = \list, char ->
     |> \(current, result) ->
         result |> List.append current
 
-expect splitListU8 [] 'a' == [[]]
-expect splitListU8 ['a', 'b', 'c'] 'b' == [['a'], ['c']]
-expect splitListU8 ['a', 'b', 'c'] 'c' == [['a', 'b'], []]
-expect splitListU8 ['a', 'b', 'c'] 'a' == [[], ['b', 'c']]
-expect splitListU8 ['a', 'b', 'b', 'c'] 'b' == [['a'], [], ['c']]
-expect splitListU8 ['a', 'b', 'c', 'b', 'd'] 'b' == [['a'], ['c'], ['d']]
+expect split_list_U8 [] 'a' == [[]]
+expect split_list_U8 ['a', 'b', 'c'] 'b' == [['a'], ['c']]
+expect split_list_U8 ['a', 'b', 'c'] 'c' == [['a', 'b'], []]
+expect split_list_U8 ['a', 'b', 'c'] 'a' == [[], ['b', 'c']]
+expect split_list_U8 ['a', 'b', 'b', 'c'] 'b' == [['a'], [], ['c']]
+expect split_list_U8 ['a', 'b', 'c', 'b', 'd'] 'b' == [['a'], ['c'], ['d']]
 
-urlDecode : List U8 -> Result (List U8) [InvalidInput Str]
-urlDecode = \bytes ->
+url_decode : List U8 -> Result (List U8) [InvalidInput Str]
+url_decode = \bytes ->
     bytes
     |> List.map
         \char -> if char == '+' then ' ' else char
@@ -449,10 +449,10 @@ urlDecode = \bytes ->
 
 percentDecode : List U8 -> Result (List U8) [InvalidInput Str]
 percentDecode = \bytes ->
-    percentDecodeHelper bytes (List.withCapacity (List.len bytes))
+    percent_decode_helper bytes (List.withCapacity (List.len bytes))
 
-percentDecodeHelper : List U8, List U8 -> Result (List U8) [InvalidInput Str]
-percentDecodeHelper = \bytes, result ->
+percent_decode_helper : List U8, List U8 -> Result (List U8) [InvalidInput Str]
+percent_decode_helper = \bytes, result ->
     when bytes is
         [] -> Ok result
         [first, .. as rest] ->
@@ -465,21 +465,21 @@ percentDecodeHelper = \bytes, result ->
                         \s -> "0x$(s)" |> Str.toU8
                 when hex is
                     Ok num ->
-                        percentDecodeHelper (rest |> List.dropFirst 2) (result |> List.append num)
+                        percent_decode_helper (rest |> List.dropFirst 2) (result |> List.append num)
 
                     Err e ->
                         when e is
                             BadUtf8 _ _ | InvalidNumStr -> Err (InvalidInput "Can not decode percent value")
             else
-                percentDecodeHelper rest (result |> List.append first)
+                percent_decode_helper rest (result |> List.append first)
 
-expect urlDecode ("foo%20bar" |> Str.toUtf8) == Ok ("foo bar" |> Str.toUtf8)
-expect urlDecode ("foo+bar" |> Str.toUtf8) == Ok ("foo bar" |> Str.toUtf8)
-expect urlDecode ("foo%" |> Str.toUtf8) == Err (InvalidInput "Can not decode percent value")
-expect urlDecode ("foo%zz" |> Str.toUtf8) == Err (InvalidInput "Can not decode percent value")
+expect url_decode ("foo%20bar" |> Str.toUtf8) == Ok ("foo bar" |> Str.toUtf8)
+expect url_decode ("foo+bar" |> Str.toUtf8) == Ok ("foo bar" |> Str.toUtf8)
+expect url_decode ("foo%" |> Str.toUtf8) == Err (InvalidInput "Can not decode percent value")
+expect url_decode ("foo%zz" |> Str.toUtf8) == Err (InvalidInput "Can not decode percent value")
 
-getField : List (Str, List U8), Str -> Result Str [InvalidInput Str, NotFound]
-getField = \fields, fieldName ->
+get_field : List (Str, List U8), Str -> Result Str [InvalidInput Str, NotFound]
+get_field = \fields, fieldName ->
     fields
     |> List.findFirst \(element, _) -> element == fieldName
     |> Result.try \(_, val) -> val |> Str.fromUtf8
@@ -489,5 +489,5 @@ getField = \fields, fieldName ->
                 BadUtf8 _ _ -> InvalidInput "Can not decode value of $(fieldName)"
                 NotFound -> NotFound
 
-expect getField [("field", "value" |> Str.toUtf8)] "field" == Ok "value"
-expect getField [("field", "value" |> Str.toUtf8)] "other-field" == Err NotFound
+expect get_field [("field", "value" |> Str.toUtf8)] "field" == Ok "value"
+expect get_field [("field", "value" |> Str.toUtf8)] "other-field" == Err NotFound
