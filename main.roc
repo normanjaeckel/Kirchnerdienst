@@ -45,7 +45,7 @@ update_model = \_model, events ->
         Err ListWasEmpty -> Ok init_model
         Ok event -> event |> decode_model
 
-handle_request! : Request, Model => Result Response _
+handle_request! : Request, Model => Result Response [Error Str]
 handle_request! = \request, model ->
     when request.method is
         Get ->
@@ -57,7 +57,7 @@ handle_request! = \request, model ->
             Ok resp
 
         _ ->
-            Err (SomeErr "Some error string")
+            Err (Error "Invalid method")
 
 decode_model : List U8 -> Result Model [DecodeError]
 decode_model = \encoded ->
@@ -78,23 +78,23 @@ handle_read_request = \request, model ->
     if is_hx_request then
         when request.url |> Str.splitOn "/" is
             ["", ""] ->
-                list_view model |> response200
+                list_view model |> response_200
 
             ["", "info-form", info, service_id] ->
                 service = model |> List.findFirst \s -> s.id == service_id
                 when (string_to_info info, service) is
                     (Ok inf, Ok serv) ->
-                        update_info_form inf service_id serv |> response200
+                        update_info_form inf service_id serv |> response_200
 
-                    _ -> response404
+                    _ -> response_404
 
-            _ -> response404
+            _ -> response_404
     else
         when request.url |> Str.splitOn "/" is
             ["", "assets", .. as sub_path] ->
                 serve_assets sub_path
 
-            _ -> response200 index
+            _ -> response_200 index
 
 serve_assets : List Str -> Response
 serve_assets = \path ->
@@ -117,25 +117,25 @@ handle_write_request = \request, model ->
         ["", "update-services"] ->
             when update_services request.body model is
                 Err (BadRequest msg) ->
-                    (response400 msg, model)
+                    (response_400 msg, model)
 
-                Ok newModel ->
-                    (list_view newModel |> response200, newModel)
+                Ok new_model ->
+                    (list_view new_model |> response_200, new_model)
 
         ["", "info-form", info, serviceId] ->
             when string_to_info info is
                 Ok inf ->
                     when update_info_perform inf serviceId request.body model is
                         Err (BadRequest msg) ->
-                            (response400 msg, model)
+                            (response_400 msg, model)
 
-                        Ok newModel ->
-                            (list_view newModel |> response200, newModel)
+                        Ok new_model ->
+                            (list_view new_model |> response_200, new_model)
 
-                Err NotFound -> (response400 "$(request.url) not found", model)
+                Err NotFound -> (response_400 "$(request.url) not found", model)
 
         _ ->
-            (response400 "$(request.url) not found", model)
+            (response_400 "$(request.url) not found", model)
 
 Info : [Assistant, Reader, Notes]
 
@@ -154,7 +154,7 @@ string_to_info = \s ->
         "notes" -> Ok Notes
         _ -> Err NotFound
 
-# List_view
+# List view
 
 list_view : Model -> Str
 list_view = \model ->
@@ -231,32 +231,28 @@ update_services : List U8, Model -> Result Model [BadRequest Str]
 update_services = \body, model ->
     body_to_fields body
     |> Result.try parse_calendar_entries
-    |> Result.try
-        \calenderEntries ->
-            calenderEntries
-            |> List.map
-                \entry ->
-                    (assistant, reader, notes) =
-                        model
-                        |> List.findFirst
-                            \service -> service.id == entry.veranstaltung.id
-                        |> Result.map \service -> (service.assistant, service.reader, service.notes)
-                        |> Result.withDefault ("", "", "")
-                    {
-                        id: entry.veranstaltung.id,
-                        datetime: transform_datetime entry.veranstaltung.start,
-                        location: entry.veranstaltung.place,
-                        description: "$(entry.veranstaltung.title): $(entry.veranstaltung.subtitle)",
-                        pastor: entry.veranstaltung.pastor,
-                        assistant: assistant,
-                        reader: reader,
-                        notes: notes,
-                    }
-            |> Ok
-    |> Result.mapErr
-        \err ->
-            when err is
-                InvalidInput msg -> BadRequest msg
+    |> Result.try \calendar_entries ->
+        calendar_entries
+        |> List.map \entry ->
+            (assistant, reader, notes) =
+                model
+                |> List.findFirst \service -> service.id == entry.veranstaltung.id
+                |> Result.map \service -> (service.assistant, service.reader, service.notes)
+                |> Result.withDefault ("", "", "")
+            {
+                id: entry.veranstaltung.id,
+                datetime: transform_datetime entry.veranstaltung.start,
+                location: entry.veranstaltung.place,
+                description: "$(entry.veranstaltung.title): $(entry.veranstaltung.subtitle)",
+                pastor: entry.veranstaltung.pastor,
+                assistant: assistant,
+                reader: reader,
+                notes: notes,
+            }
+        |> Ok
+    |> Result.mapErr \err ->
+        when err is
+            InvalidInput msg -> BadRequest msg
 
 CalendarObject : {
     veranstaltung : {
@@ -270,8 +266,8 @@ CalendarObject : {
 }
 
 calendar_field_name_mapping : Str -> Str
-calendar_field_name_mapping = \fieldName ->
-    when fieldName is
+calendar_field_name_mapping = \field_name ->
+    when field_name is
         "Veranstaltung" -> "veranstaltung"
         "ID" -> "id"
         "_event_TITLE" -> "title"
@@ -279,12 +275,12 @@ calendar_field_name_mapping = \fieldName ->
         "START_RFC" -> "start"
         "_person_NAME" -> "pastor"
         "_place_NAME" -> "place"
-        _ -> fieldName
+        _ -> field_name
 
 parse_calendar_entries : List (Str, List U8) -> Result (List CalendarObject) [InvalidInput Str]
 parse_calendar_entries = \fields ->
     fields
-    |> List.findFirst \(fieldName, _) -> fieldName == "data"
+    |> List.findFirst \(field_name, _) -> field_name == "data"
     |> Result.try \(_, data) -> Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendar_field_name_mapping })
     |> Result.try \decoded -> Ok decoded
     |> Result.mapErr
@@ -346,19 +342,19 @@ update_info_form = \info, serviceId, service ->
     renderWithoutDocType node
 
 update_info_perform : Info, Str, List U8, Model -> Result Model [BadRequest Str]
-update_info_perform = \info, serviceId, body, model ->
+update_info_perform = \info, service_id, body, model ->
     body_to_fields body
     |> Result.try parse_info
     |> Result.try
-        \infoText ->
+        \info_text ->
             model
             |> List.map
                 \service ->
-                    if service.id == serviceId then
+                    if service.id == service_id then
                         when info is
-                            Assistant -> { service & assistant: infoText }
-                            Reader -> { service & reader: infoText }
-                            Notes -> { service & notes: infoText }
+                            Assistant -> { service & assistant: info_text }
+                            Reader -> { service & reader: info_text }
+                            Notes -> { service & notes: info_text }
                     else
                         service
             |> Ok
@@ -375,16 +371,16 @@ parse_info = \fields ->
 
 # Shared
 
-response200 : Str -> Response
-response200 = \body ->
+response_200 : Str -> Response
+response_200 = \body ->
     { body: body |> Str.toUtf8, headers: [], status: 200 }
 
-response400 : Str -> Response
-response400 = \msg ->
+response_400 : Str -> Response
+response_400 = \msg ->
     { body: "400 Bad Request: $(msg)" |> Str.toUtf8, headers: [], status: 400 }
 
-response404 : Response
-response404 =
+response_404 : Response
+response_404 =
     { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
 body_to_fields : List U8 -> Result (List (Str, List U8)) [InvalidInput Str]
@@ -394,14 +390,14 @@ body_to_fields = \body ->
     |> List.mapTry
         \elem ->
             when elem |> split_list_U8 '=' is
-                [elemName, elemValue] ->
-                    elemName
+                [elem_name, elem_value] ->
+                    elem_name
                     |> url_decode
                     |> Result.try
-                        \eName ->
-                            when eName |> Str.fromUtf8 is
+                        \e_name ->
+                            when e_name |> Str.fromUtf8 is
                                 Ok n ->
-                                    elemValue |> url_decode |> Result.try \val -> Ok (n, val)
+                                    elem_value |> url_decode |> Result.try \val -> Ok (n, val)
 
                                 Err (BadUtf8 _ _) ->
                                     Err (InvalidInput "Can not decode some key")
@@ -479,14 +475,14 @@ expect url_decode ("foo%" |> Str.toUtf8) == Err (InvalidInput "Can not decode pe
 expect url_decode ("foo%zz" |> Str.toUtf8) == Err (InvalidInput "Can not decode percent value")
 
 get_field : List (Str, List U8), Str -> Result Str [InvalidInput Str, NotFound]
-get_field = \fields, fieldName ->
+get_field = \fields, field_name ->
     fields
-    |> List.findFirst \(element, _) -> element == fieldName
+    |> List.findFirst \(element, _) -> element == field_name
     |> Result.try \(_, val) -> val |> Str.fromUtf8
     |> Result.mapErr
         \err ->
             when err is
-                BadUtf8 _ _ -> InvalidInput "Can not decode value of $(fieldName)"
+                BadUtf8 _ _ -> InvalidInput "Can not decode value of $(field_name)"
                 NotFound -> NotFound
 
 expect get_field [("field", "value" |> Str.toUtf8)] "field" == Ok "value"
