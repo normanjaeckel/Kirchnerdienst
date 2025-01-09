@@ -1,6 +1,7 @@
 app [init_model, update_model, handle_request!, Model] {
     # webserver: platform "https://github.com/ostcar/kingfisher/releases/download/...",
     webserver: platform "vendor/kingfisher/platform/main.roc",
+    # webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.4/SHF-u_wznLGLRLdWiQ3XhuOwzrfXye9PhMGWmr36zzk.tar.br",
     html: "vendor/roc-html/src/main.roc", # https://github.com/Hasnep/roc-html/releases/tag/v0.6.0
     json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.11.0
 }
@@ -14,10 +15,11 @@ import "assets/styles.css" as styles : List U8
 import "assets/htmx/htmx.min.js" as htmx : List U8
 import "assets/_hyperscript/_hyperscript.min.js" as hyperscript : List U8
 
-Model : List Service
+Model : Dict ServiceId Service
+
+ServiceId : Str
 
 Service : {
-    id : Str,
     datetime : Datetime,
     location : Str,
     description : Str,
@@ -35,38 +37,103 @@ Datetime : {
     minute : U8,
 }
 
+SaveEvent : List U8 => {}
+
 init_model : Model
 init_model =
-    []
+    Dict.empty {}
 
-update_model : Model, List (List U8) -> Result Model [ListWasEmpty, DecodeError]
-update_model = \_model, events ->
-    when events |> List.last is
-        Err ListWasEmpty -> Ok init_model
-        Ok event -> event |> decode_model
+update_model : Model, List (List U8) -> Result Model [InvalidEventData]
+update_model = \model, events ->
+    events
+    |> List.walkTry model \state, bytes ->
+        state |> apply_event bytes
 
-handle_request! : Request, Model => Result Response [Error Str]
+handle_request! : Request, Model => Result Response _
 handle_request! = \request, model ->
     when request.method is
         Get ->
             handle_read_request request model |> Ok
 
         Post save_event! ->
-            (resp, new_model) = handle_write_request request model
-            save_event! (encode_model new_model)
-            Ok resp
+            handle_write_request! request model save_event! |> Ok
 
         _ ->
-            Err (Error "Invalid method")
+            response_400 "Method not allowed" |> Ok
 
-decode_model : List U8 -> Result Model [DecodeError]
-decode_model = \encoded ->
-    Decode.fromBytes encoded Json.utf8
-    |> Result.mapErr \_ -> DecodeError
+# Events
 
-encode_model : Model -> List U8
-encode_model = \model ->
-    Encode.toBytes model Json.utf8
+Event : [UpdateService CalendarObject, UpdateInfo ServiceId Info Str]
+
+Info : [Assistant, Reader, Notes]
+
+event_to_bytes : Event -> List U8
+event_to_bytes = \event ->
+    when event is
+        UpdateService calendar_object ->
+            data = Encode.toBytes calendar_object Json.utf8
+            Encode.toBytes { name: "update_service", data } Json.utf8
+
+        UpdateInfo service_id info info_text ->
+            data = Encode.toBytes { service_id, info: info_to_string info, info_text } Json.utf8
+            Encode.toBytes { name: "update_info", data } Json.utf8
+
+event_from_bytes : List U8 -> Result Event [InvalidEventData]
+event_from_bytes = \bytes ->
+    when Decode.fromBytes bytes Json.utf8 is
+        Err (Leftover _) | Err TooShort -> Err InvalidEventData
+        Ok decoded ->
+            dbg decoded
+            when decoded.name is
+                "update_service" ->
+                    calendar_object = Decode.fromBytes decoded.data Json.utf8 |> Result.mapErr? \_ -> InvalidEventData
+                    UpdateService calendar_object |> Ok
+
+                "update_info" ->
+                    info_data = Decode.fromBytes decoded.data Json.utf8 |> Result.mapErr? \_ -> InvalidEventData
+                    info = info_from_string info_data.info |> Result.mapErr? \_ -> InvalidEventData
+                    UpdateInfo info_data.service_id info info_data.info_text |> Ok
+
+                _ -> Err InvalidEventData
+
+apply_event : Model, List U8 -> Result Model [InvalidEventData]
+apply_event = \model, encoded ->
+    when encoded |> event_from_bytes? is
+        UpdateService calendar_object ->
+            model
+            |> Dict.update calendar_object.veranstaltung.id \possible_value ->
+                when possible_value is
+                    Err Missing -> toService calendar_object "" "" "" |> Ok
+                    Ok service -> toService calendar_object service.assistant service.reader service.notes |> Ok
+            |> Ok
+
+        UpdateInfo service_id info info_text ->
+            model
+            |> Dict.update service_id \possible_value ->
+                possible_value
+                |> Result.map \service ->
+                    when info is
+                        Assistant -> { service & assistant: info_text }
+                        Reader -> { service & reader: info_text }
+                        Notes -> { service & notes: info_text }
+            |> Ok
+
+info_to_string : Info -> Str
+info_to_string = \s ->
+    when s is
+        Assistant -> "assistant"
+        Reader -> "reader"
+        Notes -> "notes"
+
+info_from_string : Str -> Result Info [NotFound]
+info_from_string = \s ->
+    when s is
+        "assistant" -> Ok Assistant
+        "reader" -> Ok Reader
+        "notes" -> Ok Notes
+        _ -> Err NotFound
+
+# Request handling
 
 handle_read_request : Request, Model -> Response
 handle_read_request = \request, model ->
@@ -81,8 +148,8 @@ handle_read_request = \request, model ->
                 list_view model |> response_200
 
             ["", "info-form", info, service_id] ->
-                service = model |> List.findFirst \s -> s.id == service_id
-                when (string_to_info info, service) is
+                service = model |> Dict.get service_id
+                when (info_from_string info, service) is
                     (Ok inf, Ok serv) ->
                         update_info_form inf service_id serv |> response_200
 
@@ -111,48 +178,48 @@ serve_assets = \path ->
         _ ->
             { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
-handle_write_request : Request, Model -> (Response, Model)
-handle_write_request = \request, model ->
-    when request.url |> Str.splitOn "/" is
-        ["", "update-services"] ->
-            when update_services request.body model is
-                Err (BadRequest msg) ->
-                    (response_400 msg, model)
+handle_write_request! : Request, Model, SaveEvent => Response
+handle_write_request! = \request, model, save_event! ->
+    result =
+        when request.url |> Str.splitOn "/" is
+            ["", "update-services"] ->
+                update_services request.body
 
-                Ok new_model ->
-                    (list_view new_model |> response_200, new_model)
+            ["", "info-form", info, service_id] ->
+                info_from_string info
+                |> Result.try \inf ->
+                    update_info_perform inf service_id request.body
 
-        ["", "info-form", info, serviceId] ->
-            when string_to_info info is
-                Ok inf ->
-                    when update_info_perform inf serviceId request.body model is
-                        Err (BadRequest msg) ->
-                            (response_400 msg, model)
+            _ ->
+                Err NotFound
 
-                        Ok new_model ->
-                            (list_view new_model |> response_200, new_model)
+    when result is
+        Ok events ->
+            bytes_list = events |> List.map event_to_bytes
+            List.forEach! bytes_list save_event!
 
-                Err NotFound -> (response_400 "$(request.url) not found", model)
+            new_model =
+                when update_model model bytes_list is
+                    Err InvalidEventData ->
+                        dbg bytes_list
+                        model
 
-        _ ->
-            (response_400 "$(request.url) not found", model)
+                    Ok m -> m
 
-Info : [Assistant, Reader, Notes]
+            new_model
+            |> list_view
+            |> response_200
 
-info_to_string : Info -> Str
-info_to_string = \s ->
-    when s is
-        Assistant -> "assistant"
-        Reader -> "reader"
-        Notes -> "notes"
+        Err NotFound -> response_400 "$(request.url) not found"
+        Err (InvalidInput msg) -> response_400 msg
+        Err (BadRequest msg) -> response_400 msg
 
-string_to_info : Str -> Result Info [NotFound]
-string_to_info = \s ->
-    when s is
-        "assistant" -> Ok Assistant
-        "reader" -> Ok Reader
-        "notes" -> Ok Notes
-        _ -> Err NotFound
+# custom_safe_event! : Model, List U8, SaveEvent => Model
+# custom_safe_event! = \model, event, save_event! ->
+#     save_event! event
+#     when update_model model [event] is
+#         Err InvalidEventData -> crash "Uh oh"
+#         Ok updated_model -> updated_model
 
 # List view
 
@@ -170,26 +237,26 @@ list_view = \model ->
                         p [] [text "Abkürzungen: +AM = mit Abendmahl, +Kur = mit Kurrende, +Chor = mit Kantorei, +Pos = mit Posaunenchor, +KiGo = mit Kindergottesdienst, +KiKa = anschließend Kirchenkaffee, +FamBra = anschließend Familienbrunch"],
                     ],
                 ]
-                |> List.concat (model |> List.map service_line)
+                |> List.concat (model |> Dict.toList |> List.map service_line)
             )
     renderWithoutDocType node
 
-service_line : Service -> Node
-service_line = \service ->
+service_line : (ServiceId, Service) -> Node
+service_line = \(service_id, service) ->
     section [] [
         h2 [] [text "$(date_to_str service.datetime) · $(time_to_str service.datetime) · $(service.location)"],
         p [] [text service.description],
         p [] [text "Leitung: $(service.pastor)"],
         div [class "person-line"] [
-            p [class "info"] [text "Kirchner/in: ", button_or_text Assistant service.id service.assistant],
-            p [class "info"] [text "Lektor/in: ", button_or_text Reader service.id service.reader],
+            p [class "info"] [text "Kirchner/in: ", button_or_text Assistant service_id service.assistant],
+            p [class "info"] [text "Lektor/in: ", button_or_text Reader service_id service.reader],
         ],
-        p [class "info"] [text "Bemerkungen: ", button_or_text Notes service.id service.notes],
+        p [class "info"] [text "Bemerkungen: ", button_or_text Notes service_id service.notes],
     ]
 
-button_or_text : Info, Str, Str -> Node
-button_or_text = \info, service_id, infoText ->
-    if infoText == "" then
+button_or_text : Info, ServiceId, Str -> Node
+button_or_text = \info, service_id, info_text ->
+    if info_text == "" then
         button
             [
                 (attribute "hx-get") "/info-form/$(info_to_string info)/$(service_id)",
@@ -198,7 +265,7 @@ button_or_text = \info, service_id, infoText ->
             [text "Noch frei"]
     else
         span [] [
-            span [style "margin-right:0.5em;"] [text infoText],
+            span [style "margin-right:0.5em;"] [text info_text],
             button
                 [
                     (attribute "hx-get") "/info-form/$(info_to_string info)/$(service_id)",
@@ -227,32 +294,23 @@ num_to_str_with_zero = \n ->
 
 # Update services
 
-update_services : List U8, Model -> Result Model [BadRequest Str]
-update_services = \body, model ->
-    body_to_fields body
-    |> Result.try parse_calendar_entries
-    |> Result.try \calendar_entries ->
-        calendar_entries
-        |> List.map \entry ->
-            (assistant, reader, notes) =
-                model
-                |> List.findFirst \service -> service.id == entry.veranstaltung.id
-                |> Result.map \service -> (service.assistant, service.reader, service.notes)
-                |> Result.withDefault ("", "", "")
-            {
-                id: entry.veranstaltung.id,
-                datetime: transform_datetime entry.veranstaltung.start,
-                location: entry.veranstaltung.place,
-                description: "$(entry.veranstaltung.title): $(entry.veranstaltung.subtitle)",
-                pastor: entry.veranstaltung.pastor,
-                assistant: assistant,
-                reader: reader,
-                notes: notes,
-            }
-        |> Ok
-    |> Result.mapErr \err ->
-        when err is
-            InvalidInput msg -> BadRequest msg
+update_services : List U8 -> Result (List Event) [InvalidInput Str]
+update_services = \body ->
+    body_to_fields? body
+    |> parse_calendar_entries?
+    |> List.map \entry -> UpdateService entry
+    |> Ok
+
+toService : CalendarObject, Str, Str, Str -> Service
+toService = \entry, assistant, reader, notes -> {
+    datetime: transform_datetime entry.veranstaltung.start,
+    location: entry.veranstaltung.place,
+    description: "$(entry.veranstaltung.title): $(entry.veranstaltung.subtitle)",
+    pastor: entry.veranstaltung.pastor,
+    assistant: assistant,
+    reader: reader,
+    notes: notes,
+}
 
 CalendarObject : {
     veranstaltung : {
@@ -281,14 +339,14 @@ parse_calendar_entries : List (Str, List U8) -> Result (List CalendarObject) [In
 parse_calendar_entries = \fields ->
     fields
     |> List.findFirst \(field_name, _) -> field_name == "data"
-    |> Result.try \(_, data) -> Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendar_field_name_mapping })
-    |> Result.try \decoded -> Ok decoded
-    |> Result.mapErr
-        \err ->
-            when err is
-                NotFound -> InvalidInput "Can not parse calendar entries: not found"
-                Leftover bytes -> InvalidInput "Can not parse calendar entries: left over: $(bytes |> Str.fromUtf8 |> Result.withDefault "default")"
-                TooShort -> InvalidInput "Can not parse calendar entries: too short"
+    |> Result.mapErr? \err ->
+        when err is
+            NotFound -> InvalidInput "Can not parse calendar entries: not found"
+    |> \(_, data) -> Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendar_field_name_mapping })
+    |> Result.mapErr \err ->
+        when err is
+            Leftover bytes -> InvalidInput "Can not parse calendar entries: left over: $(bytes |> Str.fromUtf8 |> Result.withDefault "default")"
+            TooShort -> InvalidInput "Can not parse calendar entries: too short"
 
 expect
     s = "\"St\\u00f6tteritz\""
@@ -304,6 +362,11 @@ transform_datetime = \s ->
     hour = datetime |> List.sublist { start: 11, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
     minute = datetime |> List.sublist { start: 14, len: 2 } |> Str.fromUtf8 |> Result.try Str.toU8 |> Result.withDefault 0
     { year, month, day, hour, minute }
+
+expect
+    got = transform_datetime "2013-07-20T14:00:00.000+02:00"
+    expected = { year: 2013, month: 7, day: 20, hour: 14, minute: 0 }
+    got == expected
 
 # Update info
 
@@ -341,23 +404,12 @@ update_info_form = \info, serviceId, service ->
             ]
     renderWithoutDocType node
 
-update_info_perform : Info, Str, List U8, Model -> Result Model [BadRequest Str]
-update_info_perform = \info, service_id, body, model ->
+update_info_perform : Info, ServiceId, List U8 -> Result (List Event) [BadRequest Str]
+update_info_perform = \info, service_id, body ->
+    # Todo: Try to use ? or try
     body_to_fields body
     |> Result.try parse_info
-    |> Result.try
-        \info_text ->
-            model
-            |> List.map
-                \service ->
-                    if service.id == service_id then
-                        when info is
-                            Assistant -> { service & assistant: info_text }
-                            Reader -> { service & reader: info_text }
-                            Notes -> { service & notes: info_text }
-                    else
-                        service
-            |> Ok
+    |> Result.map \info_text -> [UpdateInfo service_id info info_text]
     |> Result.mapErr
         \err ->
             when err is
@@ -377,11 +429,11 @@ response_200 = \body ->
 
 response_400 : Str -> Response
 response_400 = \msg ->
-    { body: "400 Bad Request: $(msg)" |> Str.toUtf8, headers: [], status: 400 }
+    { body: "Bad Request: $(msg)" |> Str.toUtf8, headers: [], status: 400 }
 
 response_404 : Response
 response_404 =
-    { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
+    { body: "Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
 body_to_fields : List U8 -> Result (List (Str, List U8)) [InvalidInput Str]
 body_to_fields = \body ->
