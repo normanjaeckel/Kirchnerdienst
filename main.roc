@@ -83,7 +83,6 @@ event_from_bytes = \bytes ->
     when Decode.fromBytes bytes Json.utf8 is
         Err (Leftover _) | Err TooShort -> Err InvalidEventData
         Ok decoded ->
-            dbg decoded
             when decoded.name is
                 "update_service" ->
                     calendar_object = Decode.fromBytes decoded.data Json.utf8 |> Result.mapErr? \_ -> InvalidEventData
