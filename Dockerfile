@@ -6,6 +6,10 @@ COPY assets assets/
 COPY vendor vendor/
 COPY index.html main.roc ./
 
+WORKDIR vendor/kingfisher
+RUN ["roc", "build.roc"]
+
+WORKDIR /app
 RUN ["roc", "build"]
 
 
