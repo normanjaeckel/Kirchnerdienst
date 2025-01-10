@@ -1,6 +1,6 @@
 app [init_model, update_model, handle_request!, Model] {
-    webserver: platform "vendor/kingfisher/platform/main.roc",
-    # webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.4/SHF-u_wznLGLRLdWiQ3XhuOwzrfXye9PhMGWmr36zzk.tar.br",
+    # webserver: platform "vendor/kingfisher/platform/main.roc",
+    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.4/SHF-u_wznLGLRLdWiQ3XhuOwzrfXye9PhMGWmr36zzk.tar.br",
     html: "vendor/roc-html/src/main.roc", # https://github.com/Hasnep/roc-html/releases/tag/v0.6.0
     json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.11.0
 }
@@ -71,7 +71,8 @@ event_to_bytes = \event ->
             Encode.toBytes { name: "update_service", data: calendar_object } Json.utf8
 
         UpdateInfo service_id info info_text ->
-            Encode.toBytes { name: "update_info", data: { service_id, info: info_to_string info, info_text } } Json.utf8
+            data = { service_id, info: info_to_string info, info_text }
+            Encode.toBytes { name: "update_info", data } Json.utf8
 
 event_from_bytes : List U8 -> Result Event [InvalidEvent Str]
 event_from_bytes = \bytes ->
