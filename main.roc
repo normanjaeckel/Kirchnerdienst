@@ -1,5 +1,4 @@
 app [init_model, update_model, handle_request!, Model] {
-    # webserver: platform "https://github.com/ostcar/kingfisher/releases/download/...",
     webserver: platform "vendor/kingfisher/platform/main.roc",
     # webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.4/SHF-u_wznLGLRLdWiQ3XhuOwzrfXye9PhMGWmr36zzk.tar.br",
     html: "vendor/roc-html/src/main.roc", # https://github.com/Hasnep/roc-html/releases/tag/v0.6.0
@@ -43,20 +42,18 @@ init_model : Model
 init_model =
     Dict.empty {}
 
-update_model : Model, List (List U8) -> Result Model [InvalidEventData]
+update_model : Model, List (List U8) -> Result Model [InvalidEvent Str]
 update_model = \model, events ->
-    events
-    |> List.walkTry model \state, bytes ->
-        state |> apply_event bytes
+    events |> List.walkTry model \state, bytes -> state |> apply_event bytes
 
-handle_request! : Request, Model => Result Response _
+handle_request! : Request, Model => Result Response [InvalidEvent Str]
 handle_request! = \request, model ->
     when request.method is
         Get ->
             handle_read_request request model |> Ok
 
         Post save_event! ->
-            handle_write_request! request model save_event! |> Ok
+            handle_write_request! request model save_event!
 
         _ ->
             response_400 "Method not allowed" |> Ok
@@ -71,31 +68,35 @@ event_to_bytes : Event -> List U8
 event_to_bytes = \event ->
     when event is
         UpdateService calendar_object ->
-            data = Encode.toBytes calendar_object Json.utf8
-            Encode.toBytes { name: "update_service", data } Json.utf8
+            Encode.toBytes { name: "update_service", data: calendar_object } Json.utf8
 
         UpdateInfo service_id info info_text ->
-            data = Encode.toBytes { service_id, info: info_to_string info, info_text } Json.utf8
-            Encode.toBytes { name: "update_info", data } Json.utf8
+            Encode.toBytes { name: "update_info", data: { service_id, info: info_to_string info, info_text } } Json.utf8
 
-event_from_bytes : List U8 -> Result Event [InvalidEventData]
+event_from_bytes : List U8 -> Result Event [InvalidEvent Str]
 event_from_bytes = \bytes ->
-    when Decode.fromBytes bytes Json.utf8 is
-        Err (Leftover _) | Err TooShort -> Err InvalidEventData
-        Ok decoded ->
-            when decoded.name is
-                "update_service" ->
-                    calendar_object = Decode.fromBytes decoded.data Json.utf8 |> Result.mapErr? \_ -> InvalidEventData
-                    UpdateService calendar_object |> Ok
+    Decode.fromBytes bytes Json.utf8
+    |> Result.mapErr? \_ -> InvalidEvent "Cannot decode event name"
+    |> \{ name: event_name } ->
+        when event_name is
+            "update_service" ->
+                bytes
+                |> Decode.fromBytes Json.utf8
+                |> Result.mapErr? \_ -> InvalidEvent "Cannot decode event data"
+                |> \{ data } -> UpdateService data
+                |> Ok
 
-                "update_info" ->
-                    info_data = Decode.fromBytes decoded.data Json.utf8 |> Result.mapErr? \_ -> InvalidEventData
-                    info = info_from_string info_data.info |> Result.mapErr? \_ -> InvalidEventData
-                    UpdateInfo info_data.service_id info info_data.info_text |> Ok
+            "update_info" ->
+                bytes
+                |> Decode.fromBytes Json.utf8
+                |> Result.mapErr? \_ -> InvalidEvent "Cannot decode event data"
+                |> \{ data } ->
+                    info = info_from_string data.info |> Result.mapErr? \_ -> InvalidEvent "Cannot parse info from string"
+                    UpdateInfo data.service_id info data.info_text |> Ok
 
-                _ -> Err InvalidEventData
+            _ -> Err (InvalidEvent "Invalid event name")
 
-apply_event : Model, List U8 -> Result Model [InvalidEventData]
+apply_event : Model, List U8 -> Result Model [InvalidEvent Str]
 apply_event = \model, encoded ->
     when encoded |> event_from_bytes? is
         UpdateService calendar_object ->
@@ -177,7 +178,7 @@ serve_assets = \path ->
         _ ->
             { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
 
-handle_write_request! : Request, Model, SaveEvent => Response
+handle_write_request! : Request, Model, SaveEvent => Result Response [InvalidEvent Str]
 handle_write_request! = \request, model, save_event! ->
     result =
         when request.url |> Str.splitOn "/" is
@@ -195,30 +196,18 @@ handle_write_request! = \request, model, save_event! ->
     when result is
         Ok events ->
             bytes_list = events |> List.map event_to_bytes
-            List.forEach! bytes_list save_event!
+            save_and_update! model bytes_list save_event!
+            |> Result.map \updated_model ->
+                updated_model |> list_view |> response_200
 
-            new_model =
-                when update_model model bytes_list is
-                    Err InvalidEventData ->
-                        dbg bytes_list
-                        model
+        Err NotFound -> response_400 "$(request.url) not found" |> Ok
+        Err (InvalidInput msg) -> response_400 msg |> Ok
+        Err (BadRequest msg) -> response_400 msg |> Ok
 
-                    Ok m -> m
-
-            new_model
-            |> list_view
-            |> response_200
-
-        Err NotFound -> response_400 "$(request.url) not found"
-        Err (InvalidInput msg) -> response_400 msg
-        Err (BadRequest msg) -> response_400 msg
-
-# custom_safe_event! : Model, List U8, SaveEvent => Model
-# custom_safe_event! = \model, event, save_event! ->
-#     save_event! event
-#     when update_model model [event] is
-#         Err InvalidEventData -> crash "Uh oh"
-#         Ok updated_model -> updated_model
+save_and_update! : Model, List (List U8), SaveEvent => Result Model [InvalidEvent Str]
+save_and_update! = \model, events, save_event! ->
+    List.forEach! events save_event!
+    update_model model events
 
 # List view
 
@@ -338,13 +327,11 @@ parse_calendar_entries : List (Str, List U8) -> Result (List CalendarObject) [In
 parse_calendar_entries = \fields ->
     fields
     |> List.findFirst \(field_name, _) -> field_name == "data"
-    |> Result.mapErr? \err ->
-        when err is
-            NotFound -> InvalidInput "Can not parse calendar entries: not found"
+    |> Result.mapErr? \_ -> InvalidInput "Can not parse calendar entries: not found"
     |> \(_, data) -> Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendar_field_name_mapping })
     |> Result.mapErr \err ->
         when err is
-            Leftover bytes -> InvalidInput "Can not parse calendar entries: left over: $(bytes |> Str.fromUtf8 |> Result.withDefault "default")"
+            Leftover bytes -> InvalidInput "Can not parse calendar entries: left over: $(bytes |> Str.fromUtf8 |> Result.withDefault "invalid")"
             TooShort -> InvalidInput "Can not parse calendar entries: too short"
 
 expect
@@ -405,14 +392,12 @@ update_info_form = \info, serviceId, service ->
 
 update_info_perform : Info, ServiceId, List U8 -> Result (List Event) [BadRequest Str]
 update_info_perform = \info, service_id, body ->
-    # Todo: Try to use ? or try
     body_to_fields body
     |> Result.try parse_info
-    |> Result.map \info_text -> [UpdateInfo service_id info info_text]
-    |> Result.mapErr
-        \err ->
-            when err is
-                InvalidInput msg -> BadRequest msg
+    |> Result.mapErr? \err ->
+        when err is
+            InvalidInput msg -> BadRequest msg
+    |> \info_text -> Ok [UpdateInfo service_id info info_text]
 
 parse_info : List (Str, List U8) -> Result Str [InvalidInput Str]
 parse_info = \fields ->
