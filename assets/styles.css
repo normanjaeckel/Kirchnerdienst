@@ -44,14 +44,13 @@ p {
     margin-right: 0em;
 }
 
-
 .person-line .info-form {
     display: inline;
 }
 
 .info-form input,
 .info-form textarea {
-    margin-right: .5em;
+    margin-right: 0.5em;
 }
 
 @media screen and (max-width: 767px) {
@@ -68,4 +67,8 @@ p {
     .info-form textarea {
         margin-bottom: 0.5em;
     }
+}
+
+#update-services.htmx-request button {
+    display: none;
 }

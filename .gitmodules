@@ -1,9 +1,0 @@
-[submodule "vendor/roc-html"]
-	path = vendor/roc-html
-	url = https://github.com/Hasnep/roc-html.git
-[submodule "vendor/roc-json"]
-	path = vendor/roc-json
-	url = https://github.com/lukewilliamboswell/roc-json
-[submodule "vendor/kingfisher"]
-	path = vendor/kingfisher
-	url = https://github.com/ostcar/kingfisher.git
