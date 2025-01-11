@@ -1,18 +1,18 @@
 app [init_model, update_model, handle_request!, Model] {
-    # webserver: platform "vendor/kingfisher/platform/main.roc",
     webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.4/SHF-u_wznLGLRLdWiQ3XhuOwzrfXye9PhMGWmr36zzk.tar.br",
-    html: "vendor/roc-html/src/main.roc", # https://github.com/Hasnep/roc-html/releases/tag/v0.6.0
-    json: "vendor/roc-json/package/main.roc", # https://github.com/lukewilliamboswell/roc-json/releases/tag/0.11.0
+    html: "https://github.com/Hasnep/roc-html/releases/download/v0.6.0/IOyNfA4U_bCVBihrs95US9Tf5PGAWh3qvrBN4DRbK5c.tar.br",
+    json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.11.0/z45Wzc-J39TLNweQUoLw3IGZtkQiEN3lTBv3BXErRjQ.tar.br",
 }
 
 import webserver.Http exposing [Request, Response]
-import html.Attribute exposing [attribute, class, name, rows, style, type, value]
-import html.Html exposing [Node, button, div, form, h1, h2, input, p, renderWithoutDocType, section, span, text, textarea]
+import webserver.Host exposing [get!]
+import html.Attribute exposing [attribute, class, id, name, rows, src, style, type, value]
+import html.Html exposing [Node, button, div, form, h1, h2, img, input, p, renderWithoutDocType, section, span, text, textarea]
 import json.Json
 import "index.html" as index : Str
 import "assets/styles.css" as styles : List U8
 import "assets/htmx/htmx.min.js" as htmx : List U8
-import "assets/_hyperscript/_hyperscript.min.js" as hyperscript : List U8
+import "assets/spinner.svg" as spinner : List U8
 
 Model : Dict ServiceId Service
 
@@ -173,8 +173,8 @@ serve_assets = \path ->
         ["htmx", "htmx.min.js"] ->
             { body: htmx, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
 
-        ["_hyperscript", "_hyperscript.min.js"] ->
-            { body: hyperscript, headers: [{ name: "Content-Type", value: "text/javascript" }], status: 200 }
+        ["spinner.svg"] ->
+            { body: spinner, headers: [{ name: "Content-Type", value: "image/svg+xml" }], status: 200 }
 
         _ ->
             { body: "404 Not Found" |> Str.toUtf8, headers: [], status: 404 }
@@ -184,7 +184,7 @@ handle_write_request! = \request, model, save_event! ->
     result =
         when request.url |> Str.splitOn "/" is
             ["", "update-services"] ->
-                update_services request.body
+                update_services! request.body
 
             ["", "info-form", info, service_id] ->
                 info_from_string info
@@ -202,8 +202,9 @@ handle_write_request! = \request, model, save_event! ->
                 updated_model |> list_view |> response_200
 
         Err NotFound -> response_400 "$(request.url) not found" |> Ok
-        Err (InvalidInput msg) -> response_400 msg |> Ok
         Err (BadRequest msg) -> response_400 msg |> Ok
+        Err (InvalidCalendarData msg) -> response_500 msg |> Ok
+        Err (HttpError msg) -> response_500 msg |> Ok
 
 save_and_update! : Model, List (List U8), SaveEvent => Result Model [InvalidEvent Str]
 save_and_update! = \model, events, save_event! ->
@@ -227,6 +228,7 @@ list_view = \model ->
                     ],
                 ]
                 |> List.concat (model |> Dict.toList |> List.map service_line)
+                |> List.append update_button
             )
     renderWithoutDocType node
 
@@ -281,14 +283,28 @@ num_to_str_with_zero = \n ->
     else
         Num.toStr n
 
+update_button : Node
+update_button =
+    section [id "update-services"] [
+        button
+            [(attribute "hx-post") "/update-services", (attribute "hx-target") "#mainContent", (attribute "hx-indicator") "#update-services"]
+            [text "Termine aktualisieren"],
+        img [class "htmx-indicator", src "/assets/spinner.svg"],
+    ]
+
 # Update services
 
-update_services : List U8 -> Result (List Event) [InvalidInput Str]
-update_services = \body ->
-    body_to_fields? body
-    |> parse_calendar_entries?
-    |> List.map \entry -> UpdateService entry
-    |> Ok
+update_services! : List U8 => Result (List Event) [InvalidCalendarData Str, HttpError Str]
+update_services! = \_body ->
+    when get! "https://kalender.evlks.de/json?vid=98&eventtype=1" is
+        Err err ->
+            Err (HttpError "Fetch external calendar: $(err)")
+
+        Ok resp ->
+            resp
+            |> parse_calendar_entries?
+            |> List.map \entry -> UpdateService entry
+            |> Ok
 
 toService : CalendarObject, Str, Str, Str -> Service
 toService = \entry, assistant, reader, notes -> {
@@ -324,16 +340,13 @@ calendar_field_name_mapping = \field_name ->
         "_place_NAME" -> "place"
         _ -> field_name
 
-parse_calendar_entries : List (Str, List U8) -> Result (List CalendarObject) [InvalidInput Str]
-parse_calendar_entries = \fields ->
-    fields
-    |> List.findFirst \(field_name, _) -> field_name == "data"
-    |> Result.mapErr? \_ -> InvalidInput "Can not parse calendar entries: not found"
-    |> \(_, data) -> Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendar_field_name_mapping })
+parse_calendar_entries : List U8 -> Result (List CalendarObject) [InvalidCalendarData Str]
+parse_calendar_entries = \data ->
+    Decode.fromBytes data (Json.utf8With { fieldNameMapping: Custom calendar_field_name_mapping })
     |> Result.mapErr \err ->
         when err is
-            Leftover bytes -> InvalidInput "Can not parse calendar entries: left over: $(bytes |> Str.fromUtf8 |> Result.withDefault "invalid")"
-            TooShort -> InvalidInput "Can not parse calendar entries: too short"
+            Leftover bytes -> InvalidCalendarData "Can not parse calendar data: left over: $(bytes |> Str.fromUtf8 |> Result.withDefault "invalid")"
+            TooShort -> InvalidCalendarData "Can not parse calendar data: too short"
 
 expect
     s = "\"St\\u00f6tteritz\""
@@ -419,6 +432,10 @@ response_400 = \msg ->
 response_404 : Response
 response_404 =
     { body: "Not Found" |> Str.toUtf8, headers: [], status: 404 }
+
+response_500 : Str -> Response
+response_500 = \msg ->
+    { body: "Internal Server Error: $(msg)" |> Str.toUtf8, headers: [], status: 500 }
 
 body_to_fields : List U8 -> Result (List (Str, List U8)) [InvalidInput Str]
 body_to_fields = \body ->
