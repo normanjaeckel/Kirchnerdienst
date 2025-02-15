@@ -1,5 +1,5 @@
 app [init_model, update_model, handle_request!, Model] {
-    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.4/SHF-u_wznLGLRLdWiQ3XhuOwzrfXye9PhMGWmr36zzk.tar.br",
+    webserver: platform "https://github.com/ostcar/kingfisher/releases/download/v0.0.6/CGvtit0XrLnoN00TVk3Ggseg8nXTe9UykuX7dAcETmw.tar.br",
     html: "https://github.com/Hasnep/roc-html/releases/download/v0.7.0/3uTKBUdKr7d017eneDe4CLgMB1FHlYSWe7vkC20a5fI.tar.br",
     json: "https://github.com/lukewilliamboswell/roc-json/releases/download/0.12.0/1trwx8sltQ-e9Y2rOB4LWUWLS_sFVyETK8Twl0i9qpw.tar.gz",
 }
